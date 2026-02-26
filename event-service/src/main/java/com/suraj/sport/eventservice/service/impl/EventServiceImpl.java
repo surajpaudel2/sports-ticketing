@@ -128,13 +128,18 @@ public class EventServiceImpl implements EventService {
 
     /**
      * Retrieves a sports event by its unique ID.
-     * <p>
+     *
      * Restrictions:
-     * - Throws EventNotFoundException if no event exists with the given ID.
-     * <p>
-     * TODO: In the future, consider caching frequently accessed events
-     * using Redis to reduce database hits — especially useful for high-traffic
-     * events like IPL finals or World Cup matches.
+     *   - Throws EventNotFoundException if no event exists with the given ID.
+     *   - Soft deleted events are currently returned — once auth/roles are implemented
+     *     in Section 12, regular users should not see soft deleted events.
+     *     Repository query will change to findByIdAndIsDeletedFalse() at that point.
+     *     Admin users will have a separate endpoint to retrieve deleted events.
+     *
+     * TODO: implementCaching()
+     * Consider caching frequently accessed events using Redis to reduce database hits.
+     * Especially useful for high-traffic events like IPL finals or World Cup matches.
+     * Revisit when Observability and performance tuning is covered in Section 11.
      */
     @Override
     public EventResponse getEventById(Long eventId) {
@@ -145,32 +150,70 @@ public class EventServiceImpl implements EventService {
         return EventMapper.mapToEventResponse(event);
     }
 
-    // =====================================================================
+// =====================================================================
 // GET ALL EVENTS
 // =====================================================================
 
     /**
      * Retrieves all sports events.
-     * <p>
+     *
+     * Restrictions:
+     *   - Soft deleted events are currently returned — once auth/roles are implemented
+     *     in Section 12, regular users should only see non-deleted events.
+     *     Repository query will change to findAllByIsDeletedFalse() at that point.
+     *     Admin users will have a separate endpoint to view deleted events.
+     *
      * TODO: implementPagination()
      * Current implementation returns all events at once which is not scalable.
      * Need to implement cursor/keyset pagination for better performance at scale.
      * Keyset pagination uses WHERE id > lastSeenId LIMIT n instead of OFFSET
      * which avoids full table scans and performs consistently regardless of dataset size.
-     * Revisit this when the platform starts handling large volumes of events.
-     * <p>
+     * Likely a breaking change — will require /api/v2/event endpoint.
+     *
      * TODO: implementFiltering()
      * Add filtering support — by status (UPCOMING, ONGOING), sportType (Cricket, Football),
      * venue, date range etc. to allow users to browse events more effectively.
+     * Controller method signature will accept @RequestParam filters at that point.
      */
     @Override
     public List<EventResponse> getAllEvents() {
 
-        // TODO: Replace with paginated query once pagination is implemented
+        // TODO: Replace with paginated and filtered query once implemented
+        // TODO: Replace findAll() with findAllByIsDeletedFalse() once auth/roles are added
         return eventRepository.findAll()
                 .stream()
                 .map(EventMapper::mapToEventResponse)
                 .collect(Collectors.toList());
+    }
+
+    // =====================================================================
+// DELETE EVENT
+// =====================================================================
+
+    /**
+     * Soft deletes a sports event by marking it as deleted.
+     *
+     * IMPORTANT: This method is intentionally left as a stub until auth/roles
+     * are implemented in Section 12. Proper soft delete requires:
+     *   - Role validation — only Admin can delete events
+     *   - Visibility rules — deleted events hidden from regular users
+     *   - Repository changes — findByIdAndIsDeletedFalse(), findAllByIsDeletedFalse()
+     *   - Admin endpoint to view/restore deleted events
+     *
+     * TODO: implementSoftDelete()
+     *   - Event must exist → else EventNotFoundException
+     *   - Event must not already be soft deleted → else EventAlreadyDeletedException
+     *   - Cannot delete an ONGOING event — event is currently in progress
+     *   - Set isDeleted = true, deletedAt = LocalDateTime.now()
+     *
+     * TODO: implementAdminRestore()
+     *   - Allow admin to restore accidentally deleted events
+     *   - Set isDeleted = false, deletedAt = null
+     */
+    @Override
+    public void deleteEvent(Long eventId) {
+        // TODO: implement once auth/roles are added in Section 12
+        throw new UnsupportedOperationException("Delete functionality will be implemented once auth/roles are in place");
     }
 
     // =====================================================================
@@ -256,5 +299,62 @@ public class EventServiceImpl implements EventService {
             }
             event.setAvailableSeats(newAvailableSeats);
         }
+    }
+
+    // =====================================================================
+// REDUCE AVAILABLE SEATS
+// =====================================================================
+
+    /**
+     * Reduces available seats for a sports event when a booking is made.
+     *
+     * IMPORTANT: This method is intentionally left as a stub until inter-service
+     * communication is implemented in Section 8. This endpoint will be called
+     * internally by Booking Service only — not exposed to end users.
+     *
+     * TODO: implementReduceAvailableSeats()
+     *   - Event must exist → else EventNotFoundException
+     *   - Event must be UPCOMING or ONGOING → else throw EventNotBookableException
+     *   - Requested seats must be greater than 0
+     *   - Available seats must be sufficient → else throw InsufficientSeatsException
+     *   - Reduce availableSeats by requested amount
+     *
+     * TODO: secureInternalEndpoint()
+     *   - Once auth is implemented, this endpoint should only be accessible
+     *     by internal services, not end users. Consider using a service token
+     *     or internal network restriction.
+     */
+    @Override
+    public void reduceAvailableSeats(Long eventId, int seats) {
+        // TODO: implement once inter-service communication is set up in Section 8
+        throw new UnsupportedOperationException("Will be implemented when Booking Service integration is set up");
+    }
+
+// =====================================================================
+// RESTORE AVAILABLE SEATS
+// =====================================================================
+
+    /**
+     * Restores available seats for a sports event when a booking is cancelled.
+     *
+     * IMPORTANT: This method is intentionally left as a stub until inter-service
+     * communication is implemented in Section 8. This endpoint will be called
+     * internally by Booking Service only — not exposed to end users.
+     *
+     * TODO: implementRestoreAvailableSeats()
+     *   - Event must exist → else EventNotFoundException
+     *   - Seats to restore must be greater than 0
+     *   - Restored seats cannot exceed totalSeats — safety check against data corruption
+     *   - Restore availableSeats by requested amount
+     *
+     * TODO: secureInternalEndpoint()
+     *   - Once auth is implemented, this endpoint should only be accessible
+     *     by internal services, not end users. Consider using a service token
+     *     or internal network restriction.
+     */
+    @Override
+    public void restoreAvailableSeats(Long eventId, int seats) {
+        // TODO: implement once inter-service communication is set up in Section 8
+        throw new UnsupportedOperationException("Will be implemented when Booking Service integration is set up");
     }
 }

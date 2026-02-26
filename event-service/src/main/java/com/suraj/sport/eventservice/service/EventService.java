@@ -17,4 +17,10 @@ public interface EventService {
     EventResponse getEventById(Long eventId);
 
     List<EventResponse> getAllEvents();
+
+    void deleteEvent(Long eventId);
+
+    void reduceAvailableSeats(Long eventId, int seats);
+
+    void restoreAvailableSeats(Long eventId, int seats);
 }

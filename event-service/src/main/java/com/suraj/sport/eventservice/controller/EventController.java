@@ -379,4 +379,107 @@ public class EventController {
         return ResponseEntity.ok(ApiResult.of(true, "Events Retrieved Successfully", events));
     }
 
+    // =====================================================================
+// DELETE EVENT
+// =====================================================================
+
+    @Operation(
+            summary = "Delete a sports event",
+            description = "Soft deletes a sports event. This endpoint is currently unavailable and will be fully implemented once authentication and role-based access control is in place in a future release."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "501",
+                    description = "Not yet implemented",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": false,
+                                    "message": "Delete functionality will be implemented once auth/roles are in place",
+                                    "data": null
+                                }
+                                """)
+                    )
+            )
+    })
+    @DeleteMapping("/{eventId}")
+    public ResponseEntity<ApiResult<Void>> deleteEvent(
+            @Parameter(description = "ID of the event to delete", required = true, example = "1")
+            @PathVariable Long eventId) {
+        eventService.deleteEvent(eventId);
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResult.of(false, "Delete functionality will be implemented once auth/roles are in place", null));
+    }
+
+    // =====================================================================
+// REDUCE AVAILABLE SEATS
+// =====================================================================
+
+    @Operation(
+            summary = "Reduce available seats for an event",
+            description = "Internal endpoint called by Booking Service when a booking is made. Not available to end users. Will be fully implemented in Section 8."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "501",
+                    description = "Not yet implemented",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": false,
+                                    "message": "Will be implemented when Booking Service integration is set up",
+                                    "data": null
+                                }
+                                """)
+                    )
+            )
+    })
+    @PatchMapping("/{eventId}/reduce-seats")
+    public ResponseEntity<ApiResult<Void>> reduceAvailableSeats(
+            @Parameter(description = "ID of the event", required = true, example = "1")
+            @PathVariable Long eventId,
+            @Parameter(description = "Number of seats to reduce", required = true, example = "2")
+            @RequestParam int seats) {
+        eventService.reduceAvailableSeats(eventId, seats);
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResult.of(false, "Will be implemented when Booking Service integration is set up", null));
+    }
+
+// =====================================================================
+// RESTORE AVAILABLE SEATS
+// =====================================================================
+
+    @Operation(
+            summary = "Restore available seats for an event",
+            description = "Internal endpoint called by Booking Service when a booking is cancelled. Not available to end users. Will be fully implemented in Section 8."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "501",
+                    description = "Not yet implemented",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": false,
+                                    "message": "Will be implemented when Booking Service integration is set up",
+                                    "data": null
+                                }
+                                """)
+                    )
+            )
+    })
+    @PatchMapping("/{eventId}/restore-seats")
+    public ResponseEntity<ApiResult<Void>> restoreAvailableSeats(
+            @Parameter(description = "ID of the event", required = true, example = "1")
+            @PathVariable Long eventId,
+            @Parameter(description = "Number of seats to restore", required = true, example = "2")
+            @RequestParam int seats) {
+        eventService.restoreAvailableSeats(eventId, seats);
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(ApiResult.of(false, "Will be implemented when Booking Service integration is set up", null));
+    }
+
 }
