@@ -3,6 +3,7 @@ package com.suraj.sport.eventservice.service.impl;
 import com.suraj.sport.eventservice.dto.request.CreateEventRequest;
 import com.suraj.sport.eventservice.dto.request.UpdateEventRequest;
 import com.suraj.sport.eventservice.dto.response.CreateEventResponse;
+import com.suraj.sport.eventservice.dto.response.EventResponse;
 import com.suraj.sport.eventservice.dto.response.UpdateEventResponse;
 import com.suraj.sport.eventservice.entity.Event;
 import com.suraj.sport.eventservice.entity.EventStatus;
@@ -116,6 +117,29 @@ public class EventServiceImpl implements EventService {
         Event savedEvent = eventRepository.save(updatedEvent);
 
         return EventMapper.mapToUpdateEventResponse(savedEvent);
+    }
+
+    // =====================================================================
+// GET EVENT BY ID
+// =====================================================================
+
+    /**
+     * Retrieves a sports event by its unique ID.
+     *
+     * Restrictions:
+     *   - Throws EventNotFoundException if no event exists with the given ID.
+     *
+     * TODO: In the future, consider caching frequently accessed events
+     * using Redis to reduce database hits — especially useful for high-traffic
+     * events like IPL finals or World Cup matches.
+     */
+    @Override
+    public EventResponse getEventById(Long eventId) {
+
+        // Edge case: event must exist
+        Event event = findEventOrThrow(eventId);
+
+        return EventMapper.mapToEventResponse(event);
     }
 
     // =====================================================================

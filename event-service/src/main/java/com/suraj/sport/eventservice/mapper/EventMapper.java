@@ -3,6 +3,7 @@ package com.suraj.sport.eventservice.mapper;
 import com.suraj.sport.eventservice.dto.request.CreateEventRequest;
 import com.suraj.sport.eventservice.dto.request.UpdateEventRequest;
 import com.suraj.sport.eventservice.dto.response.CreateEventResponse;
+import com.suraj.sport.eventservice.dto.response.EventResponse;
 import com.suraj.sport.eventservice.dto.response.UpdateEventResponse;
 import com.suraj.sport.eventservice.entity.Event;
 import com.suraj.sport.eventservice.entity.EventStatus;
@@ -56,6 +57,22 @@ public class EventMapper {
                 event.getPricePerSeat(),
                 event.getStatus(),
                 event.getCreatedAt()
+        );
+    }
+
+    public static EventResponse mapToEventResponse(Event event) {
+        return new EventResponse(
+                event.getId(),
+                event.getName(),
+                event.getSportType(),
+                event.getVenue(),
+                event.getEventDate(),
+                event.getTotalSeats(),
+                event.getAvailableSeats(),
+                event.getPricePerSeat(),
+                event.getStatus(),
+                event.getCreatedAt(),
+                event.getUpdatedAt()
         );
     }
 }

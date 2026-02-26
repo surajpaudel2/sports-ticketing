@@ -4,6 +4,7 @@ import com.suraj.sport.eventservice.dto.request.CreateEventRequest;
 import com.suraj.sport.eventservice.dto.request.UpdateEventRequest;
 import com.suraj.sport.eventservice.dto.response.ApiResult;
 import com.suraj.sport.eventservice.dto.response.CreateEventResponse;
+import com.suraj.sport.eventservice.dto.response.EventResponse;
 import com.suraj.sport.eventservice.dto.response.UpdateEventResponse;
 import com.suraj.sport.eventservice.service.EventService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -225,6 +226,78 @@ public class EventController {
             @Valid @RequestBody UpdateEventRequest updateEventRequest) {
         UpdateEventResponse updateEventResponse = eventService.updateEvent(eventId, updateEventRequest);
         return ResponseEntity.ok(ApiResult.of(true, "Event Updated Successfully", updateEventResponse));
+    }
+
+    // =====================================================================
+// GET EVENT BY ID
+// =====================================================================
+
+    @Operation(
+            summary = "Get a sports event by ID",
+            description = "Retrieves full details of a sports event by its unique ID."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Event retrieved successfully",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": true,
+                                    "message": "Event Retrieved Successfully",
+                                    "data": {
+                                        "id": 1,
+                                        "name": "IPL 2025 Final",
+                                        "sportType": "Cricket",
+                                        "venue": "Wankhede Stadium, Mumbai",
+                                        "eventDate": "2025-05-25T18:00:00",
+                                        "totalSeats": 1000,
+                                        "availableSeats": 800,
+                                        "pricePerSeat": 2500.00,
+                                        "status": "UPCOMING",
+                                        "createdAt": "2025-02-25T10:00:00",
+                                        "updatedAt": "2025-02-26T10:00:00"
+                                    }
+                                }
+                                """)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Event not found",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": false,
+                                    "message": "Event not found with id: 1",
+                                    "data": null
+                                }
+                                """)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Unexpected internal server error",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                {
+                                    "success": false,
+                                    "message": "An unexpected error occurred",
+                                    "data": null
+                                }
+                                """)
+                    )
+            )
+    })
+    @GetMapping("/{eventId}")
+    public ResponseEntity<ApiResult<EventResponse>> getEventById(
+            @Parameter(description = "ID of the event to retrieve", required = true, example = "1")
+            @PathVariable Long eventId) {
+        EventResponse eventResponse = eventService.getEventById(eventId);
+        return ResponseEntity.ok(ApiResult.of(true, "Event Retrieved Successfully", eventResponse));
     }
 
 }
