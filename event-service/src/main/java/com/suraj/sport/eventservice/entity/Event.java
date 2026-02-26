@@ -34,6 +34,9 @@ public class Event {
 
     private double pricePerSeat;
 
+    @Column(nullable = false)
+    private boolean isDeleted = false;
+
     @Enumerated(EnumType.STRING)
     private EventStatus status;
 
@@ -42,4 +45,6 @@ public class Event {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    private LocalDateTime deletedAt;
 }
