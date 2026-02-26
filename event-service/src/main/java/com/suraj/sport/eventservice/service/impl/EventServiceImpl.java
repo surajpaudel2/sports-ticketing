@@ -14,6 +14,9 @@ import com.suraj.sport.eventservice.service.EventService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @RequiredArgsConstructor
 public class EventServiceImpl implements EventService {
@@ -70,16 +73,16 @@ public class EventServiceImpl implements EventService {
 
     /**
      * Updates an existing sports event.
-     *
+     * <p>
      * Allowed status transitions:
-     *   UPCOMING  -> UPCOMING or ONGOING
-     *   ONGOING   -> ONGOING, COMPLETED or CANCELLED
-     *
+     * UPCOMING  -> UPCOMING or ONGOING
+     * ONGOING   -> ONGOING, COMPLETED or CANCELLED
+     * <p>
      * Restrictions:
-     *   - CANCELLED and COMPLETED events are immutable — cannot be updated.
-     *   - Event date cannot be changed once the event is ONGOING.
-     *   - Available seats are recalculated automatically if total seats change.
-     *   - Available seats cannot be manually set — managed by the booking system.
+     * - CANCELLED and COMPLETED events are immutable — cannot be updated.
+     * - Event date cannot be changed once the event is ONGOING.
+     * - Available seats are recalculated automatically if total seats change.
+     * - Available seats cannot be manually set — managed by the booking system.
      */
     @Override
     public UpdateEventResponse updateEvent(Long eventId, UpdateEventRequest updateEventRequest) {
@@ -125,10 +128,10 @@ public class EventServiceImpl implements EventService {
 
     /**
      * Retrieves a sports event by its unique ID.
-     *
+     * <p>
      * Restrictions:
-     *   - Throws EventNotFoundException if no event exists with the given ID.
-     *
+     * - Throws EventNotFoundException if no event exists with the given ID.
+     * <p>
      * TODO: In the future, consider caching frequently accessed events
      * using Redis to reduce database hits — especially useful for high-traffic
      * events like IPL finals or World Cup matches.
@@ -140,6 +143,34 @@ public class EventServiceImpl implements EventService {
         Event event = findEventOrThrow(eventId);
 
         return EventMapper.mapToEventResponse(event);
+    }
+
+    // =====================================================================
+// GET ALL EVENTS
+// =====================================================================
+
+    /**
+     * Retrieves all sports events.
+     * <p>
+     * TODO: implementPagination()
+     * Current implementation returns all events at once which is not scalable.
+     * Need to implement cursor/keyset pagination for better performance at scale.
+     * Keyset pagination uses WHERE id > lastSeenId LIMIT n instead of OFFSET
+     * which avoids full table scans and performs consistently regardless of dataset size.
+     * Revisit this when the platform starts handling large volumes of events.
+     * <p>
+     * TODO: implementFiltering()
+     * Add filtering support — by status (UPCOMING, ONGOING), sportType (Cricket, Football),
+     * venue, date range etc. to allow users to browse events more effectively.
+     */
+    @Override
+    public List<EventResponse> getAllEvents() {
+
+        // TODO: Replace with paginated query once pagination is implemented
+        return eventRepository.findAll()
+                .stream()
+                .map(EventMapper::mapToEventResponse)
+                .collect(Collectors.toList());
     }
 
     // =====================================================================
@@ -166,11 +197,11 @@ public class EventServiceImpl implements EventService {
 
     /**
      * Validates that the requested status transition is allowed.
-     *
+     * <p>
      * Allowed transitions:
-     *   UPCOMING -> UPCOMING or ONGOING
-     *   ONGOING  -> ONGOING, COMPLETED or CANCELLED
-     *
+     * UPCOMING -> UPCOMING or ONGOING
+     * ONGOING  -> ONGOING, COMPLETED or CANCELLED
+     * <p>
      * Note: Direct jump from UPCOMING to COMPLETED is intentionally blocked.
      * Status must progress naturally through the lifecycle.
      */
@@ -193,7 +224,7 @@ public class EventServiceImpl implements EventService {
     /**
      * Prevents event date changes when the event is already ONGOING.
      * Once an event has started, its schedule is locked.
-     *
+     * <p>
      * Note: Date changes for UPCOMING events are allowed but should trigger
      * user notifications if bookings already exist (see TODO above).
      */
@@ -208,9 +239,9 @@ public class EventServiceImpl implements EventService {
     /**
      * Recalculates available seats when total seats are updated.
      * Formula: availableSeats = newTotalSeats - bookedSeats
-     *
+     * <p>
      * Throws InvalidSeatCountException if the new total is less than already booked seats.
-     *
+     * <p>
      * NOTE: In the future, if total seats are reduced below booked seats,
      * consider a partial cancellation strategy — e.g. refund the most recently
      * booked users first (LIFO) or allow organizer to choose which bookings to cancel.

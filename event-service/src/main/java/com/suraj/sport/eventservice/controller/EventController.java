@@ -20,6 +20,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @Tag(name = "Event API", description = "Manages sports events")
 @RestController
 @RequestMapping("/api/v1/event")
@@ -106,16 +108,16 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "name": "IPL 2025 Final",
-                                    "sportType": "Cricket",
-                                    "venue": "Wankhede Stadium, Mumbai",
-                                    "eventDate": "2025-05-25T18:00:00",
-                                    "totalSeats": 1000,
-                                    "availableSeats": 1000,
-                                    "pricePerSeat": 2500.00
-                                }
-                                """)
+                                    {
+                                        "name": "IPL 2025 Final",
+                                        "sportType": "Cricket",
+                                        "venue": "Wankhede Stadium, Mumbai",
+                                        "eventDate": "2025-05-25T18:00:00",
+                                        "totalSeats": 1000,
+                                        "availableSeats": 1000,
+                                        "pricePerSeat": 2500.00
+                                    }
+                                    """)
                     )
             )
             @Valid @RequestBody CreateEventRequest createEventRequest) {
@@ -139,23 +141,23 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": true,
-                                    "message": "Event Updated Successfully",
-                                    "data": {
-                                        "id": 1,
-                                        "name": "IPL 2025 Final",
-                                        "sportType": "Cricket",
-                                        "venue": "Eden Gardens, Kolkata",
-                                        "eventDate": "2025-05-25T18:00:00",
-                                        "totalSeats": 1000,
-                                        "availableSeats": 800,
-                                        "pricePerSeat": 3000.00,
-                                        "status": "ONGOING",
-                                        "createdAt": "2025-02-25T10:00:00"
+                                    {
+                                        "success": true,
+                                        "message": "Event Updated Successfully",
+                                        "data": {
+                                            "id": 1,
+                                            "name": "IPL 2025 Final",
+                                            "sportType": "Cricket",
+                                            "venue": "Eden Gardens, Kolkata",
+                                            "eventDate": "2025-05-25T18:00:00",
+                                            "totalSeats": 1000,
+                                            "availableSeats": 800,
+                                            "pricePerSeat": 3000.00,
+                                            "status": "ONGOING",
+                                            "createdAt": "2025-02-25T10:00:00"
+                                        }
                                     }
-                                }
-                                """)
+                                    """)
                     )
             ),
             @ApiResponse(
@@ -164,12 +166,12 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": false,
-                                    "message": "UPCOMING event can only transition to UPCOMING or ONGOING",
-                                    "data": null
-                                }
-                                """)
+                                    {
+                                        "success": false,
+                                        "message": "UPCOMING event can only transition to UPCOMING or ONGOING",
+                                        "data": null
+                                    }
+                                    """)
                     )
             ),
             @ApiResponse(
@@ -178,12 +180,12 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": false,
-                                    "message": "Event not found with id: 1",
-                                    "data": null
-                                }
-                                """)
+                                    {
+                                        "success": false,
+                                        "message": "Event not found with id: 1",
+                                        "data": null
+                                    }
+                                    """)
                     )
             ),
             @ApiResponse(
@@ -192,12 +194,12 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": false,
-                                    "message": "An unexpected error occurred",
-                                    "data": null
-                                }
-                                """)
+                                    {
+                                        "success": false,
+                                        "message": "An unexpected error occurred",
+                                        "data": null
+                                    }
+                                    """)
                     )
             )
     })
@@ -211,16 +213,16 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "name": "IPL 2025 Final",
-                                    "sportType": "Cricket",
-                                    "venue": "Eden Gardens, Kolkata",
-                                    "eventDate": "2025-05-25T18:00:00",
-                                    "totalSeats": 1000,
-                                    "pricePerSeat": 3000.00,
-                                    "status": "ONGOING"
-                                }
-                                """)
+                                    {
+                                        "name": "IPL 2025 Final",
+                                        "sportType": "Cricket",
+                                        "venue": "Eden Gardens, Kolkata",
+                                        "eventDate": "2025-05-25T18:00:00",
+                                        "totalSeats": 1000,
+                                        "pricePerSeat": 3000.00,
+                                        "status": "ONGOING"
+                                    }
+                                    """)
                     )
             )
             @Valid @RequestBody UpdateEventRequest updateEventRequest) {
@@ -243,24 +245,24 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": true,
-                                    "message": "Event Retrieved Successfully",
-                                    "data": {
-                                        "id": 1,
-                                        "name": "IPL 2025 Final",
-                                        "sportType": "Cricket",
-                                        "venue": "Wankhede Stadium, Mumbai",
-                                        "eventDate": "2025-05-25T18:00:00",
-                                        "totalSeats": 1000,
-                                        "availableSeats": 800,
-                                        "pricePerSeat": 2500.00,
-                                        "status": "UPCOMING",
-                                        "createdAt": "2025-02-25T10:00:00",
-                                        "updatedAt": "2025-02-26T10:00:00"
+                                    {
+                                        "success": true,
+                                        "message": "Event Retrieved Successfully",
+                                        "data": {
+                                            "id": 1,
+                                            "name": "IPL 2025 Final",
+                                            "sportType": "Cricket",
+                                            "venue": "Wankhede Stadium, Mumbai",
+                                            "eventDate": "2025-05-25T18:00:00",
+                                            "totalSeats": 1000,
+                                            "availableSeats": 800,
+                                            "pricePerSeat": 2500.00,
+                                            "status": "UPCOMING",
+                                            "createdAt": "2025-02-25T10:00:00",
+                                            "updatedAt": "2025-02-26T10:00:00"
+                                        }
                                     }
-                                }
-                                """)
+                                    """)
                     )
             ),
             @ApiResponse(
@@ -269,12 +271,12 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": false,
-                                    "message": "Event not found with id: 1",
-                                    "data": null
-                                }
-                                """)
+                                    {
+                                        "success": false,
+                                        "message": "Event not found with id: 1",
+                                        "data": null
+                                    }
+                                    """)
                     )
             ),
             @ApiResponse(
@@ -283,12 +285,12 @@ public class EventController {
                     content = @Content(
                             mediaType = "application/json",
                             examples = @ExampleObject(value = """
-                                {
-                                    "success": false,
-                                    "message": "An unexpected error occurred",
-                                    "data": null
-                                }
-                                """)
+                                    {
+                                        "success": false,
+                                        "message": "An unexpected error occurred",
+                                        "data": null
+                                    }
+                                    """)
                     )
             )
     })
@@ -298,6 +300,83 @@ public class EventController {
             @PathVariable Long eventId) {
         EventResponse eventResponse = eventService.getEventById(eventId);
         return ResponseEntity.ok(ApiResult.of(true, "Event Retrieved Successfully", eventResponse));
+    }
+
+    // =====================================================================
+// GET ALL EVENTS
+// =====================================================================
+
+    // TODO: pagination — return type will change to Page<EventResponse> or a custom
+//       CursorPageResponse<EventResponse> once keyset pagination is implemented.
+//       This will likely be a breaking change requiring a v2 endpoint: /api/v2/event
+
+    // TODO: filtering — method signature will accept @RequestParam filters like
+//
+    @Operation(
+            summary = "Get all sports events",
+            description = "Retrieves all sports events. Note: Pagination and filtering will be added in the future."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Events retrieved successfully",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                        "success": true,
+                                        "message": "Events Retrieved Successfully",
+                                        "data": [
+                                            {
+                                                "id": 1,
+                                                "name": "IPL 2025 Final",
+                                                "sportType": "Cricket",
+                                                "venue": "Wankhede Stadium, Mumbai",
+                                                "eventDate": "2025-05-25T18:00:00",
+                                                "totalSeats": 1000,
+                                                "availableSeats": 800,
+                                                "pricePerSeat": 2500.00,
+                                                "status": "UPCOMING",
+                                                "createdAt": "2025-02-25T10:00:00",
+                                                "updatedAt": "2025-02-26T10:00:00"
+                                            },
+                                            {
+                                                "id": 2,
+                                                "name": "FIFA World Cup Final",
+                                                "sportType": "Football",
+                                                "venue": "Lusail Stadium, Qatar",
+                                                "eventDate": "2025-06-15T20:00:00",
+                                                "totalSeats": 5000,
+                                                "availableSeats": 3000,
+                                                "pricePerSeat": 5000.00,
+                                                "status": "UPCOMING",
+                                                "createdAt": "2025-02-25T10:00:00",
+                                                "updatedAt": "2025-02-26T10:00:00"
+                                            }
+                                        ]
+                                    }
+                                    """)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Unexpected internal server error",
+                    content = @Content(
+                            mediaType = "application/json",
+                            examples = @ExampleObject(value = """
+                                    {
+                                        "success": false,
+                                        "message": "An unexpected error occurred",
+                                        "data": null
+                                    }
+                                    """)
+                    )
+            )
+    })
+    @GetMapping
+    public ResponseEntity<ApiResult<List<EventResponse>>> getAllEvents() {
+        List<EventResponse> events = eventService.getAllEvents();
+        return ResponseEntity.ok(ApiResult.of(true, "Events Retrieved Successfully", events));
     }
 
 }
