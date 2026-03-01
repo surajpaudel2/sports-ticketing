@@ -282,11 +282,7 @@ public class PaymentServiceImpl implements PaymentService {
         // Revisit in Section 8
 
         // Create new Transaction record for this retry attempt
-        Transaction transaction = Transaction.builder()
-                .payment(payment)
-                .amount(payment.getAmount())
-                .transactionStatus(TransactionStatus.PENDING)
-                .build();
+        Transaction transaction = TransactionMapper.mapToTransaction(payment);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         // Update Payment back to PENDING for this retry
