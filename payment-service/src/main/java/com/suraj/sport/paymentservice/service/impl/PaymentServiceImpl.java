@@ -120,17 +120,21 @@ public class PaymentServiceImpl implements PaymentService {
         return PaymentMapper.mapToPaymentResponse(savedPayment);
     }
 
-    // =====================================================================
-    // PROCESS REFUND
-    // =====================================================================
-
     /**
      * Processes a refund for a payment.
      *
      * Supports both partial and full refunds:
      *   - Full refund: refundAmount equals payment.amount
      *   - Partial refund: refundAmount is less than payment.amount
-     *     e.g. user booked 3 seats, cancels 1 → refundAmount = pricePerSeat
+     *
+     * NOTE: refundAmount is ALWAYS calculated and provided by Booking Service —
+     *   Payment Service never calculates refund amounts itself.
+     *   Booking Service owns the pricing logic because it holds pricePerSeat and seatsBooked.
+     *   Example: user booked 3 seats at $100 each, cancels 1 seat →
+     *   Booking Service calculates refundAmount = 1 * pricePerSeat = $100 and sends it here.
+     *   Payment Service simply processes whatever amount Booking Service sends.
+     *   This follows Single Responsibility Principle — Booking Service owns booking/pricing
+     *   concerns, Payment Service owns payment/refund processing concerns.
      *
      * ARCHITECTURAL DECISION — Gateway refund approach:
      *   The gateway does not need to know about internal booking logic.
@@ -139,11 +143,11 @@ public class PaymentServiceImpl implements PaymentService {
      *
      * Flow:
      *   1. Find payment or throw PaymentNotFoundException
-     *   2. Validate payment is SUCCESS → else throw PaymentNotRefundableException
-     *   3. Validate refundAmount <= remaining refundable amount
+     *   2. Validate payment is SUCCESS or PARTIALLY_REFUNDED → else throw PaymentNotRefundableException
+     *   3. Validate refundAmount <= remaining refundable amount → else throw InvalidRefundAmountException
      *   4. Create Refund record with PENDING status
      *   5. Call gateway refund API (stubbed)
-     *   6. SUCCESS → update Refund to SUCCESS, update Payment to REFUNDED/PARTIALLY_REFUNDED
+     *   6. SUCCESS → update Refund to SUCCESS, update Payment to REFUNDED or PARTIALLY_REFUNDED
      *   7. FAILED → update Refund to FAILED
      *
      * FIXME: Replace synchronous gateway call with Kafka event in Section 14.
