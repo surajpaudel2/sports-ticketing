@@ -7,6 +7,7 @@ import com.suraj.sport.paymentservice.dto.response.RefundResponse;
 import com.suraj.sport.paymentservice.entity.*;
 import com.suraj.sport.paymentservice.exception.*;
 import com.suraj.sport.paymentservice.mapper.PaymentMapper;
+import com.suraj.sport.paymentservice.mapper.TransactionMapper;
 import com.suraj.sport.paymentservice.repository.PaymentRepository;
 import com.suraj.sport.paymentservice.repository.RefundRepository;
 import com.suraj.sport.paymentservice.repository.TransactionRepository;
@@ -59,23 +60,12 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentResponse initiatePayment(InitiatePaymentRequest request) {
 
-        // Create Payment record with PENDING status
-        Payment payment = Payment.builder()
-                .bookingId(request.getBookingId())
-                .eventId(request.getEventId())
-                .userId(request.getUserId())
-                .amount(request.getAmount())
-                .paymentStatus(PaymentStatus.PENDING)
-                .paymentMethod(request.getPaymentMethod())
-                .build();
+        //will create payment with pending status as 'PENDING' before saving to db.
+        Payment payment = PaymentMapper.mapToPayment(request);
         Payment savedPayment = paymentRepository.save(payment);
 
-        // Create Transaction record for this attempt
-        Transaction transaction = Transaction.builder()
-                .payment(savedPayment)
-                .amount(request.getAmount())
-                .transactionStatus(TransactionStatus.PENDING)
-                .build();
+        // will create transaction status as 'PENDING' before saving to db.
+        Transaction transaction = TransactionMapper.mapToTransaction(savedPayment);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
         // TODO: callPaymentGateway(request)
