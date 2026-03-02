@@ -1,6 +1,7 @@
-package com.suraj.sport.notificationservice.service;
+package com.suraj.sport.notificationservice.service.impl;
 
 import com.suraj.sport.notificationservice.exception.NotificationSendException;
+import com.suraj.sport.notificationservice.service.EmailService;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
