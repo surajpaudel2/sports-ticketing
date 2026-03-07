@@ -1,0 +1,12 @@
+spring:
+  profiles:
+    active: native  # For local development where  you are using the file or classpath-based configuration you have to use the native profile. If you are using git-based configuration, you have to use the git profile.
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/config
+
+
+server:
+  port: 8071
