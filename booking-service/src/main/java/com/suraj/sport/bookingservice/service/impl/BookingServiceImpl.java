@@ -233,15 +233,23 @@ public class BookingServiceImpl implements BookingService {
     /**
      * Re-books a previously cancelled booking.
      * Treated as a completely fresh booking — checks availability and redoes payment.
-     * <p>
+     *
      * Flow:
-     * 1. Booking must be CANCELLED → else BookingNotRebookableException
-     * 2. Check event is still available — call Event Service
-     * 3. Check seats available — call Event Service
-     * 4. Deduct seats — call Event Service
-     * 5. Reset booking to PENDING, clear cancellationReason and paymentId
-     * 6. Initiate new payment — call Payment Service
-     * <p>
+     *   1. Booking must exist → else BookingNotFoundException
+     *   2. Booking must be CANCELLED → else BookingNotRebookableException
+     *   3. Fetch and validate event — must exist, be bookable, and have enough seats
+     *   4. Deduct seats in Event Service — treated as fresh booking
+     *   5. Reset booking to PENDING, clear cancellationReason and paymentId
+     *   6. Initiate new payment via Payment Service
+     *   7. Payment success → booking CONFIRMED, notify user
+     *   8. Payment failed → restore seats, notify user, booking stays PENDING
+     *
+     * ARCHITECTURAL DECISION — Why reBook is treated as a fresh booking:
+     *   When booking was cancelled, seats were restored (if CONFIRMED) or were
+     *   already available (if PENDING). We cannot assume seats are still available.
+     *   Therefore reBook follows the exact same flow as createBooking for seat
+     *   management and payment processing.
+     *
      * FIXME: Distributed transaction — same risks as createBooking.
      *   Implement SAGA pattern in Section 14.
      */
@@ -257,31 +265,34 @@ public class BookingServiceImpl implements BookingService {
                     "Only CANCELLED bookings can be re-booked. Current status: " + booking.getBookingStatus());
         }
 
-        // TODO: checkEventAvailability(booking.getEventId())
-        // Call Event Service to verify event is still UPCOMING or ONGOING
-        // Throw EventNotBookableException if event is COMPLETED or CANCELLED
+        // Step 3: Fetch and validate event — same validation as createBooking
+        // Event may have changed since original booking — must re-validate
+        EventClientResponse event = fetchAndValidateEventForRetry(booking);
 
-        // TODO: checkSeatsAvailability(booking.getEventId(), booking.getSeatsBooked())
-        // Call Event Service to verify requested seats are still available
-        // Throw InsufficientSeatsException if not enough seats available
+        // Step 4: Deduct seats — treated as fresh booking
+        // FIXME: Race condition — same risk as createBooking. Revisit with Redis.
+        eventServiceClient.reduceSeats(booking.getEventId(), booking.getSeatsBooked());
 
-        // TODO: deductSeats(booking.getEventId(), booking.getSeatsBooked())
-        // Call Event Service to deduct seats again for this re-booking
-
-        // Reset booking to PENDING — treated as fresh booking
+        // Step 5: Reset booking to PENDING — clear previous cancellation data
+        // FIXME: Distributed transaction — if seat deduction succeeds but booking save fails,
+        //   seats are deducted but booking stays CANCELLED. Implement SAGA pattern in Section 14.
         booking.setBookingStatus(BookingStatus.PENDING);
         booking.setCancellationReason(null);
         booking.setPaymentId(null);
         Booking savedBooking = bookingRepository.save(booking);
 
-        // TODO: initiatePayment(savedBooking)
-        // Call Payment Service to create a new PENDING payment record
-        // On success → set bookingStatus = CONFIRMED, set paymentId
-        // On failure → restoreSeats(booking.getEventId(), booking.getSeatsBooked())
-        //              keep bookingStatus = PENDING, user can retry payment later
+        // Step 6: Initiate new payment via Payment Service
+        // Payment Service trusts that seats are already handled here
+        PaymentClientResponse payment = retryPaymentWithGateway(savedBooking);
 
-        // TODO: notifyUser(savedBooking)
-        // Notify user that re-booking is initiated and payment is pending
+        // Step 7 + 8: Handle payment result
+        // Success → confirm booking, notify user
+        // Failure → restore seats, notify user, booking stays PENDING for retry
+        if (isPaymentSuccessful(payment)) {
+            savedBooking = handleRetryPaymentSuccess(savedBooking, event, payment);
+        } else {
+            handleRetryPaymentFailure(savedBooking, event);
+        }
 
         return BookingMapper.mapToBookingResponse(savedBooking);
     }
@@ -363,10 +374,6 @@ public class BookingServiceImpl implements BookingService {
             throw new BookingNotCancellableException("Booking is already cancelled");
         }
     }
-
-    // =====================================================================
-// PRIVATE HELPER METHODS — CREATE BOOKING
-// =====================================================================
 
     /**
      * Fetches event details from Event Service and validates it is bookable.
