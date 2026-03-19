@@ -1,5 +1,6 @@
 package com.suraj.sport.bookingservice.dto.request;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,4 +15,8 @@ public class CancelBookingRequest {
 
     @NotBlank(message = "Cancellation reason is required")
     private String cancellationReason;
+
+    @NotBlank(message = "Recipient email is required")
+    @Email(message = "Invalid email format")
+    private String recipientEmail;
 }

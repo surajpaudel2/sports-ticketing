@@ -1,8 +1,10 @@
 package com.suraj.sport.bookingservice.client;
 
 import com.suraj.sport.bookingservice.dto.request.InitiatePaymentRequest;
+import com.suraj.sport.bookingservice.dto.request.ProcessRefundRequest;
 import com.suraj.sport.bookingservice.dto.response.ApiResult;
 import com.suraj.sport.bookingservice.dto.response.PaymentClientResponse;
+import com.suraj.sport.bookingservice.dto.response.RefundClientResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,4 +19,7 @@ public interface PaymentServiceClient {
     // =====================================================================
     @PostMapping("/api/v1/payment")
     ApiResult<PaymentClientResponse> initiatePayment(@RequestBody InitiatePaymentRequest request);
+
+    @PostMapping("/api/v1/payment/refund")
+    ApiResult<RefundClientResponse> processRefund(@RequestBody ProcessRefundRequest request);
 }

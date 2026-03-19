@@ -3,10 +3,7 @@ package com.suraj.sport.bookingservice.service.impl;
 import com.suraj.sport.bookingservice.client.EventServiceClient;
 import com.suraj.sport.bookingservice.client.NotificationServiceClient;
 import com.suraj.sport.bookingservice.client.PaymentServiceClient;
-import com.suraj.sport.bookingservice.dto.request.CancelBookingRequest;
-import com.suraj.sport.bookingservice.dto.request.CreateBookingRequest;
-import com.suraj.sport.bookingservice.dto.request.InitiatePaymentRequest;
-import com.suraj.sport.bookingservice.dto.request.NotificationRequest;
+import com.suraj.sport.bookingservice.dto.request.*;
 import com.suraj.sport.bookingservice.dto.response.*;
 import com.suraj.sport.bookingservice.entity.Booking;
 import com.suraj.sport.bookingservice.entity.BookingStatus;
@@ -17,6 +14,7 @@ import com.suraj.sport.bookingservice.service.BookingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -127,27 +125,39 @@ public class BookingServiceImpl implements BookingService {
         // TODO: checkCancellationDeadline(booking.getEventId())
         // Call Event Service to get cancellationDeadline for the event
         // If current date is past the deadline → throw BookingNotCancellableException
-        // with message informing the user of the deadline
+        // Requires cancellationDeadline field to be added to Event entity first
+        // Revisit when Event Service is updated with cancellationDeadline
 
-        // Update booking status to CANCELLED
+        // Capture previous status before cancelling — needed for seat restoration and refund
+        // CONFIRMED → restore seats + trigger refund
+        // PENDING   → seats already restored when payment failed, no refund needed
+        BookingStatus previousStatus = booking.getBookingStatus();
+
+        // Step 1: Restore seats FIRST — before saving cancellation to DB
+        // ARCHITECTURAL DECISION: Seats must be restored before cancelling booking.
+        // If we cancel booking first and seat restoration fails — booking is cancelled
+        // but seats are never restored — permanent data corruption.
+        // By restoring seats first — if it fails, booking stays CONFIRMED and
+        // user can retry cancellation safely.
+        // FIXME: Distributed transaction — if seat restoration succeeds but booking
+        //   save fails — seats are restored but booking is still CONFIRMED.
+        //   Implement SAGA pattern in Section 14.
+        if (previousStatus == BookingStatus.CONFIRMED) {
+            restoreSeatsOnCancellation(booking);
+        }
+
+        // Step 2: Cancel booking in DB — only after seats are safely restored
         booking.setBookingStatus(BookingStatus.CANCELLED);
         booking.setCancellationReason(request.getCancellationReason());
         Booking savedBooking = bookingRepository.save(booking);
 
-        // TODO: restoreSeats(booking.getEventId(), booking.getSeatsBooked())
-        // Only restore seats if booking was CONFIRMED — PENDING bookings already
-        // had their seats restored when payment failed during creation
-//        if (previousStatus == BookingStatus.CONFIRMED) {
-//            // Call Event Service to restore seats
-//        }
-
-        // TODO: processRefund(booking)
-        // Call Payment Service to trigger refund if booking was CONFIRMED
-        // Refund amount depends on cancellation policy — full or partial
-
-        // TODO: notifyUser(savedBooking)
-        // Notify user via Notification Service that booking has been cancelled
-        // Include refund details if applicable
+        // Step 3: Trigger refund and notify — CONFIRMED bookings only
+        if (previousStatus == BookingStatus.CONFIRMED) {
+            triggerRefundAndNotify(savedBooking, request);
+        } else {
+            // PENDING booking — no refund, just notify cancellation
+            sendCancellationNotification(savedBooking, request, null);
+        }
 
         return BookingMapper.mapToBookingResponse(savedBooking);
     }
@@ -500,6 +510,70 @@ public class BookingServiceImpl implements BookingService {
                         "eventName", event.name(),
                         "amount", booking.getTotalAmount()
                 ))
+                .build());
+    }
+
+    /**
+     * Restores seats in Event Service when a CONFIRMED booking is cancelled.
+     * Only called for CONFIRMED bookings — PENDING bookings already had
+     * their seats restored when payment failed during creation.
+     */
+    private void restoreSeatsOnCancellation(Booking booking) {
+        eventServiceClient.restoreSeats(booking.getEventId(), booking.getSeatsBooked());
+    }
+
+    /**
+     * Triggers refund via Payment Service and notifies user.
+     * Only called for CONFIRMED bookings — PENDING bookings have no payment to refund.
+     *
+     * NOTE: refundAmount is calculated here as full refund for now.
+     * Partial refund logic (based on cancellation policy) will be added
+     * when cancellationDeadline and refund policy are implemented in Event Service.
+     *
+     * FIXME: Partial refund — if cancelled after deadline, refund only partial amount.
+     *   Business decision needed on percentage. Revisit when policy is defined.
+     */
+    private void triggerRefundAndNotify(Booking booking, CancelBookingRequest request) {
+
+        // Full refund for now — partial refund logic deferred
+        // TODO: calculate partial refund based on cancellationDeadline policy
+        ProcessRefundRequest refundRequest = ProcessRefundRequest.builder()
+                .paymentId(booking.getPaymentId())
+                .refundAmount(booking.getTotalAmount())
+                .refundReason(request.getCancellationReason())
+                .build();
+
+        ApiResult<RefundClientResponse> refundResult = paymentServiceClient.processRefund(refundRequest);
+        RefundClientResponse refund = refundResult.getData();
+
+        sendCancellationNotification(booking, request, refund);
+    }
+
+    /**
+     * Sends BOOKING_CANCELLED notification to user via Notification Service.
+     * Includes refund details if booking was CONFIRMED and refund was processed.
+     *
+     * Template variables provided:
+     *   - bookingId, cancellationReason
+     *   - refundAmount, refundStatus (if refund was processed)
+     */
+    private void sendCancellationNotification(Booking booking, CancelBookingRequest request,
+                                              RefundClientResponse refund) {
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("bookingId", booking.getId());
+        variables.put("cancellationReason", booking.getCancellationReason());
+
+        if (refund != null) {
+            variables.put("refundAmount", refund.refundAmount());
+            variables.put("refundStatus", refund.refundStatus());
+        }
+
+        notificationServiceClient.sendNotification(NotificationRequest.builder()
+                .userId(booking.getUserId())
+                .notificationType("BOOKING_CANCELLED")
+                .channel("EMAIL")
+                .recipientEmail(request.getRecipientEmail())
+                .templateVariables(variables)
                 .build());
     }
 }
