@@ -1,0 +1,8 @@
+# =====================================================================
+# EUREKA SERVER — QA CONFIGURATION
+# TODO: Add QA environment config when QA environment is set up
+# =====================================================================
+
+eureka:
+  server:
+    enable-self-preservation: true

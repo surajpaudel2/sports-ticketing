@@ -55,6 +55,24 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    @ExceptionHandler(EventNotFoundException.class)
+    public ResponseEntity<ApiResult<Void>> handleEventNotFound(EventNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResult.of(false, ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(EventNotBookableException.class)
+    public ResponseEntity<ApiResult<Void>> handleEventNotBookable(EventNotBookableException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResult.of(false, ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(InsufficientSeatsException.class)
+    public ResponseEntity<ApiResult<Void>> handleInsufficientSeats(InsufficientSeatsException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResult.of(false, ex.getMessage(), null));
+    }
+
     // ── Catch-All ─────────────────────────────────────────────────────────────
 
     @ExceptionHandler(Exception.class)

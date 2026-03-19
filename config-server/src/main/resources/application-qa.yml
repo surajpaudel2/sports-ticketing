@@ -1,0 +1,16 @@
+# =====================================================================
+# CONFIG SERVER — QA CONFIGURATION
+# TODO: Add QA environment config when QA environment is set up
+# =====================================================================
+
+encrypt:
+  key-store:
+    location: classpath:configserver.jks
+    password: ${KEY_STORE_PASSWORD}
+    alias: configserver
+    secret: ${KEY_STORE_SECRET}
+
+logging:
+  level:
+    org.springframework.cloud.config: INFO
+    org.springframework.cloud.bus: INFO

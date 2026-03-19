@@ -1,9 +1,13 @@
 package com.suraj.sport.bookingservice.service.impl;
 
+import com.suraj.sport.bookingservice.client.EventServiceClient;
+import com.suraj.sport.bookingservice.client.NotificationServiceClient;
+import com.suraj.sport.bookingservice.client.PaymentServiceClient;
 import com.suraj.sport.bookingservice.dto.request.CancelBookingRequest;
 import com.suraj.sport.bookingservice.dto.request.CreateBookingRequest;
-import com.suraj.sport.bookingservice.dto.response.BookingResponse;
-import com.suraj.sport.bookingservice.dto.response.CreateBookingResponse;
+import com.suraj.sport.bookingservice.dto.request.InitiatePaymentRequest;
+import com.suraj.sport.bookingservice.dto.request.NotificationRequest;
+import com.suraj.sport.bookingservice.dto.response.*;
 import com.suraj.sport.bookingservice.entity.Booking;
 import com.suraj.sport.bookingservice.entity.BookingStatus;
 import com.suraj.sport.bookingservice.exception.*;
@@ -14,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -21,6 +26,9 @@ import java.util.stream.Collectors;
 public class BookingServiceImpl implements BookingService {
 
     private final BookingRepository bookingRepository;
+    private final EventServiceClient eventServiceClient;
+    private final PaymentServiceClient paymentServiceClient;
+    private final NotificationServiceClient notificationServiceClient;
 
     // =====================================================================
     // CREATE BOOKING
@@ -30,12 +38,12 @@ public class BookingServiceImpl implements BookingService {
      * Creates a new booking for a sports event.
      * <p>
      * Flow:
-     * 1. Check seats available in Event Service
+     * 1. Fetch event details and validate — event must exist, be bookable, and have enough seats
      * 2. Deduct seats in Event Service immediately
      * 3. Create booking with status PENDING
-     * 4. Initiate payment with status PENDING
-     * 5. Payment success → booking CONFIRMED
-     * 6. Payment failed → restore seats in Event Service → booking stays PENDING
+     * 4. Initiate payment via Payment Service
+     * 5. Payment success → booking CONFIRMED, notify user
+     * 6. Payment failed → restore seats in Event Service, notify user, booking stays PENDING
      * <p>
      * Restrictions:
      * - Multiple bookings per user per event are allowed — each is a separate record
@@ -57,33 +65,29 @@ public class BookingServiceImpl implements BookingService {
     @Override
     public CreateBookingResponse createBooking(CreateBookingRequest request) {
 
-        // TODO: checkSeatsAvailability(request.getEventId(), request.getSeatsBooked())
-        // Call Event Service to verify requested seats are available
-        // Throw InsufficientSeatsException if not enough seats available
-        // Throw EventNotFoundException if event does not exist
-        // Throw EventNotBookableException if event is COMPLETED or CANCELLED
+        // Step 1: Fetch and validate event — checks existence, status, and seat availability
+        EventClientResponse event = fetchAndValidateEvent(request);
 
-        // TODO: deductSeats(request.getEventId(), request.getSeatsBooked())
-        // Call Event Service to deduct requested seats immediately
-        // Only proceed if deduction is successful
+        // Step 2: Deduct seats in Event Service immediately before creating booking
+        // FIXME: Race condition — see Javadoc above
+        eventServiceClient.reduceSeats(request.getEventId(), request.getSeatsBooked());
 
-        // TODO: fetchPricePerSeat(request.getEventId())
-        // Call Event Service to get current price per seat for total amount calculation
-        double pricePerSeat = 0.0; // STUB — replace with actual price from Event Service
+        // Step 3: Create booking with PENDING status — price fetched from Event Service above
+        // FIXME: Distributed transaction — see Javadoc above
+        Booking savedBooking = createPendingBooking(request, event);
 
-        // Create booking with PENDING status
-        Booking booking = BookingMapper.mapToBooking(request, pricePerSeat);
-        Booking savedBooking = bookingRepository.save(booking);
+        // Step 4: Initiate payment via Payment Service
+        // Payment Service trusts that seats are already handled — no re-check needed here
+        PaymentClientResponse payment = processPayment(request, savedBooking);
 
-        // TODO: initiatePayment(savedBooking)
-        // Call Payment Service to create a PENDING payment record
-        // On success → update booking status to CONFIRMED, set paymentId
-        // On failure → restoreSeats(request.getEventId(), request.getSeatsBooked())
-        //              keep booking as PENDING, user can retry payment later
-
-        // TODO: notifyUser(savedBooking)
-        // Notify user via Notification Service that booking is created
-        // Include event details, seats booked, total amount and payment instructions
+        // Step 5: Handle payment result
+        // Success → confirm booking, notify user
+        // Failure → restore seats, notify user, booking stays PENDING for retry
+        if (isPaymentSuccessful(payment)) {
+            savedBooking = handlePaymentSuccess(savedBooking, event, request, payment);
+        } else {
+            handlePaymentFailure(savedBooking, event, request);
+        }
 
         return BookingMapper.mapToCreateBookingResponse(savedBooking);
     }
@@ -338,5 +342,164 @@ public class BookingServiceImpl implements BookingService {
         if (booking.getBookingStatus() == BookingStatus.CANCELLED) {
             throw new BookingNotCancellableException("Booking is already cancelled");
         }
+    }
+
+    // =====================================================================
+// PRIVATE HELPER METHODS — CREATE BOOKING
+// =====================================================================
+
+    /**
+     * Fetches event details from Event Service and validates it is bookable.
+     *
+     * Validations:
+     *   - Event must exist → else EventNotFoundException
+     *   - Event must be UPCOMING or ONGOING → else EventNotBookableException
+     *   - Available seats must be >= requested seats → else InsufficientSeatsException
+     *
+     * Note: Uses Yoda conditions ("CONSTANT".equals(variable)) to prevent
+     * NullPointerExceptions when comparing status strings.
+     */
+    private EventClientResponse fetchAndValidateEvent(CreateBookingRequest request) {
+        ApiResult<EventClientResponse> eventResult = eventServiceClient.getEventById(request.getEventId());
+        EventClientResponse event = eventResult.getData();
+
+        if (event == null) {
+            throw new EventNotFoundException("Event not found with id: " + request.getEventId());
+        }
+
+        // Yoda conditions ("CONSTANT".equals(variable)) prevent NullPointerExceptions
+        if ("CANCELLED".equals(event.status()) || "COMPLETED".equals(event.status())) {
+            throw new EventNotBookableException("Event is not bookable. Current status: " + event.status());
+        }
+
+        if (event.availableSeats() < request.getSeatsBooked()) {
+            throw new InsufficientSeatsException(
+                    String.format("Not enough seats available. Requested: %d, Available: %d",
+                            request.getSeatsBooked(), event.availableSeats()));
+        }
+
+        return event;
+    }
+
+    /**
+     * Creates a booking record with PENDING status and saves it to the database.
+     * Price per seat is fetched from Event Service — not from request — to ensure
+     * we always use the current event price at booking time.
+     */
+    private Booking createPendingBooking(CreateBookingRequest request, EventClientResponse event) {
+        Booking booking = BookingMapper.mapToBooking(request, event.pricePerSeat());
+        return bookingRepository.save(booking);
+    }
+
+    /**
+     * Initiates payment via Payment Service.
+     * Builds the payment request from the saved booking and calls Payment Service.
+     *
+     * Note: Payment Service trusts that seats are already deducted at this point.
+     * No seat validation is done in Payment Service for initial payment creation.
+     */
+    private PaymentClientResponse processPayment(CreateBookingRequest request, Booking savedBooking) {
+        InitiatePaymentRequest paymentRequest = InitiatePaymentRequest.builder()
+                .bookingId(savedBooking.getId())
+                .eventId(savedBooking.getEventId())
+                .userId(savedBooking.getUserId())
+                .amount(savedBooking.getTotalAmount())
+                .paymentMethod(request.getPaymentMethod())
+                .build();
+
+        ApiResult<PaymentClientResponse> paymentResult = paymentServiceClient.initiatePayment(paymentRequest);
+        return paymentResult.getData();
+    }
+
+    /**
+     * Checks if the payment was successful.
+     * Returns false if payment is null (gateway failure or timeout) or status is not SUCCESS.
+     */
+    private boolean isPaymentSuccessful(PaymentClientResponse payment) {
+        return payment != null && "SUCCESS".equals(payment.paymentStatus());
+    }
+
+    /**
+     * Handles successful payment — confirms booking and notifies user.
+     *
+     * Flow:
+     *   1. Update booking status to CONFIRMED
+     *   2. Set paymentId on booking — links booking to payment record
+     *   3. Send BOOKING_CONFIRMED notification to user
+     */
+    private Booking handlePaymentSuccess(Booking booking, EventClientResponse event,
+                                         CreateBookingRequest request, PaymentClientResponse payment) {
+        booking.setBookingStatus(BookingStatus.CONFIRMED);
+        booking.setPaymentId(payment.id());
+        Booking updatedBooking = bookingRepository.save(booking);
+
+        sendConfirmationNotification(updatedBooking, event, request, payment);
+        return updatedBooking;
+    }
+
+    /**
+     * Handles failed payment — restores seats and notifies user.
+     *
+     * Flow:
+     *   1. Restore seats in Event Service — seats were deducted before payment attempt
+     *   2. Send PAYMENT_FAILED notification to user — booking stays PENDING for retry
+     *
+     * Note: Booking status stays PENDING — user can retry payment.
+     * Seats are restored so other users can book while this user retries.
+     *
+     * FIXME: Seat locking window — restoring seats creates a window where seats
+     *   are available to other users while this user is retrying.
+     *   Proper solution: Redis TTL-based seat locking. Revisit when Redis is introduced.
+     */
+    private void handlePaymentFailure(Booking booking, EventClientResponse event, CreateBookingRequest request) {
+        eventServiceClient.restoreSeats(request.getEventId(), request.getSeatsBooked());
+        sendFailureNotification(booking, event, request);
+    }
+
+    /**
+     * Sends BOOKING_CONFIRMED notification to user via Notification Service.
+     * Includes all relevant booking details for the confirmation email template.
+     *
+     * Template variables provided:
+     *   - bookingId, eventName, eventDate, venue, seatsBooked, totalAmount, receiptUrl
+     */
+    private void sendConfirmationNotification(Booking booking, EventClientResponse event,
+                                              CreateBookingRequest request, PaymentClientResponse payment) {
+        notificationServiceClient.sendNotification(NotificationRequest.builder()
+                .userId(booking.getUserId())
+                .notificationType("BOOKING_CONFIRMED")
+                .channel("EMAIL")
+                .recipientEmail(request.getRecipientEmail())
+                .templateVariables(Map.of(
+                        "bookingId", booking.getId(),
+                        "eventName", event.name(),
+                        "eventDate", event.eventDate(),
+                        "venue", event.venue(),
+                        "seatsBooked", booking.getSeatsBooked(),
+                        "totalAmount", booking.getTotalAmount(),
+                        "receiptUrl", payment.receiptUrl() != null ? payment.receiptUrl() : ""
+                ))
+                .build());
+    }
+
+    /**
+     * Sends PAYMENT_FAILED notification to user via Notification Service.
+     * Informs user that payment failed and they can retry.
+     *
+     * Template variables provided:
+     *   - bookingId, eventName, amount
+     */
+    private void sendFailureNotification(Booking booking, EventClientResponse event, CreateBookingRequest request) {
+        notificationServiceClient.sendNotification(NotificationRequest.builder()
+                .userId(booking.getUserId())
+                .notificationType("PAYMENT_FAILED")
+                .channel("EMAIL")
+                .recipientEmail(request.getRecipientEmail())
+                .templateVariables(Map.of(
+                        "bookingId", booking.getId(),
+                        "eventName", event.name(),
+                        "amount", booking.getTotalAmount()
+                ))
+                .build());
     }
 }

@@ -1,0 +1,184 @@
+# ============================================================
+# docker-compose.yml  —  Sports Ticketing Platform
+# ============================================================
+# Prerequisites:
+#   • docker-compose-base.yml must be in the same directory
+#   • Copy .env.example → .env and fill in your values
+#
+# Startup order:
+#   rabbitmq (healthy) → config-server (healthy)
+#             → event / booking / payment / notification
+# ============================================================
+
+services:
+
+  # ════════════════════════════════════════════
+  # INFRASTRUCTURE — RabbitMQ
+  # ════════════════════════════════════════════
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    hostname: rabbitmq                   # stable hostname so queue metadata survives restarts
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_AMQP_PORT:-5672}:5672"        # AMQP — Spring Boot / Spring Cloud Bus
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"       # Management UI  →  http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_USER:-guest}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASS:-guest}"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - sports-ticketing
+    healthcheck:
+      # rabbitmq-diagnostics -q ping is the lightest readiness check available
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.50"
+        reservations:
+          memory: 256M
+
+  # ════════════════════════════════════════════
+  # CONFIG SERVER
+  # Depends on: RabbitMQ (Spring Cloud Bus + Monitor)
+  # ════════════════════════════════════════════
+  config-server:
+    extends:
+      file: docker-compose-base.yml
+      service: config-server-base
+    image: "${DOCKER_REGISTRY:-surajpaudel4833}/config-server:${APP_VERSION:-latest}"
+    container_name: config-server
+    ports:
+      - "${CONFIG_SERVER_PORT:-8888}:8888"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy          # wait until RabbitMQ can accept connections
+    environment:
+      SPRING_APPLICATION_NAME: config-server
+      SERVER_PORT: "8888"
+      # Git-backed config repo (override with your actual repo)
+      SPRING_CLOUD_CONFIG_SERVER_GIT_URI: "${CONFIG_GIT_URI}"
+      SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL: "${CONFIG_GIT_BRANCH:-main}"
+      SPRING_CLOUD_CONFIG_SERVER_GIT_CLONE_ON_START: "true"
+      SPRING_CLOUD_CONFIG_SERVER_GIT_TIMEOUT: "10"        # seconds to wait for git clone/fetch
+      SPRING_CLOUD_CONFIG_SERVER_GIT_FORCE_PULL: "true"
+      # GitHub Webhook → /monitor endpoint (spring-cloud-config-monitor)
+      # Spring Cloud Bus broadcasts the refresh event over RabbitMQ after a push
+      # Two RabbitMQ URLs needed:
+      #   1. AMQP — internal broker connection (Spring Cloud Bus)
+      #   2. HTTP Management API — optional, for health probes or admin tooling
+      SPRING_RABBITMQ_ADDRESSES: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"    # HTTP management URL (admin/tooling use)
+      # Webhook monitor timeouts — GitHub has a 10 s delivery timeout; stay well under it
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,refresh,bus-refresh"
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "always"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s                    # give time to clone the config repo on first boot
+
+  # ════════════════════════════════════════════
+  # EVENT SERVICE
+  # ════════════════════════════════════════════
+  event-service:
+    extends:
+      file: docker-compose-base.yml
+      service: microservice-base
+    image: "${DOCKER_REGISTRY:-surajpaudel4833}/event-service:${APP_VERSION:-latest}"
+    container_name: event-service
+    ports:
+      - "${EVENT_SERVICE_PORT:-8081}:8080"
+    environment:
+      SPRING_APPLICATION_NAME: event-service
+      SERVER_PORT: "8080"
+      SPRING_RABBITMQ_ADDRESSES: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    depends_on:
+      config-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════
+  # BOOKING SERVICE
+  # ════════════════════════════════════════════
+  booking-service:
+    extends:
+      file: docker-compose-base.yml
+      service: microservice-base
+    image: "${DOCKER_REGISTRY:-surajpaudel4833}/booking-service:${APP_VERSION:-latest}"
+    container_name: booking-service
+    ports:
+      - "${BOOKING_SERVICE_PORT:-8082}:8080"
+    environment:
+      SPRING_APPLICATION_NAME: booking-service
+      SERVER_PORT: "8080"
+      SPRING_RABBITMQ_ADDRESSES: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    depends_on:
+      config-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════
+  # PAYMENT SERVICE
+  # ════════════════════════════════════════════
+  payment-service:
+    extends:
+      file: docker-compose-base.yml
+      service: microservice-base
+    image: "${DOCKER_REGISTRY:-surajpaudel4833}/payment-service:${APP_VERSION:-latest}"
+    container_name: payment-service
+    ports:
+      - "${PAYMENT_SERVICE_PORT:-8083}:8080"
+    environment:
+      SPRING_APPLICATION_NAME: payment-service
+      SERVER_PORT: "8080"
+      SPRING_RABBITMQ_ADDRESSES: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+
+  # ════════════════════════════════════════════
+  # NOTIFICATION SERVICE
+  # ════════════════════════════════════════════
+  notification-service:
+    extends:
+      file: docker-compose-base.yml
+      service: microservice-base
+    image: "${DOCKER_REGISTRY:-surajpaudel4833}/notification-service:${APP_VERSION:-latest}"
+    container_name: notification-service
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-8084}:8080"
+    environment:
+      SPRING_APPLICATION_NAME: notification-service
+      SERVER_PORT: "8080"
+      SPRING_RABBITMQ_ADDRESSES: "amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672/"
+      RABBITMQ_MANAGEMENT_URL: "http://rabbitmq:15672"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+
+# ════════════════════════════════════════════
+# VOLUMES & NETWORKS
+# ════════════════════════════════════════════
+volumes:
+  rabbitmq-data:
+    driver: local
+
+networks:
+  sports-ticketing:
+    driver: bridge
+    name: sports-ticketing

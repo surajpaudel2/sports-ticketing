@@ -1,12 +1,97 @@
+# =====================================================================
+# CONFIG SERVER — DEFAULT CONFIGURATION
+# Kept locally — Config Server manages its own config.
+# Never fetches config from itself.
+#
+# Startup order:
+#   1. Eureka Server  — starts first, no dependencies
+#   2. Config Server  — starts second, registers with Eureka
+#   3. Microservices  — start last, discover Config Server via Eureka
+# =====================================================================
+
 spring:
+  application:
+    name: config-server
+
   profiles:
-    active: native  # For local development where  you are using the file or classpath-based configuration you have to use the native profile. If you are using git-based configuration, you have to use the git profile.
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # =====================================================================
+  # GIT BASED CONFIGURATION
+  # Config Server fetches all microservice config files from GitHub repo.
+  # Sensitive values injected via environment variables — never hardcoded.
+  # =====================================================================
   cloud:
     config:
       server:
-        native:
-          search-locations: classpath:/config
+        git:
+          uri: ${GIT_URI}                           # GitHub config repo URL
+          username: ${GIT_USERNAME}                 # GitHub username
+          password: ${GIT_PASSWORD}                 # GitHub personal access token
+          default-label: ${GIT_DEFAULT_LABEL:main}  # Branch to fetch from
+          timeout: 5                                # Connection timeout in seconds
+          clone-on-start: true                      # Clone on startup — fail fast if unreachable
+          force-pull: true                          # Always pull latest — ignore local cache
 
+    # =====================================================================
+    # SPRING CLOUD BUS + RABBITMQ
+    # Broadcasts config refresh events to all services automatically
+    # when GitHub webhook hits /monitor endpoint.
+    #
+    # Flow:
+    #   GitHub push → webhook → Config Server /monitor
+    #       → Spring Cloud Bus → RabbitMQ
+    #       → all services refresh config automatically
+    # =====================================================================
+    bus:
+      enabled: true
+      refresh:
+        enabled: true
+
+  # =====================================================================
+  # RABBITMQ
+  # Used by Spring Cloud Bus to broadcast refresh events.
+  # All microservices must also have RabbitMQ configured.
+  # =====================================================================
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# =====================================================================
+# EUREKA — SERVICE DISCOVERY
+# Config Server registers with Eureka so microservices can discover
+# it by name instead of hardcoded URL.
+# Microservices use: spring.cloud.config.discovery.service-id=config-server
+# =====================================================================
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+# =====================================================================
+# MANAGEMENT ENDPOINTS
+# Exposes all actuator endpoints — required for /monitor webhook
+# endpoint which GitHub calls to trigger config refresh.
+# TODO: In production restrict exposed endpoints — never expose all
+# =====================================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    refresh:
+      enabled: true
+    bus-refresh:
+      enabled: true
+    health:
+      show-details: always
 
 server:
   port: 8071

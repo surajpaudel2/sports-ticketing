@@ -1,0 +1,40 @@
+# =====================================================================
+# CONFIG SERVER — DEVELOPMENT CONFIGURATION
+# =====================================================================
+
+# =====================================================================
+# ENCRYPTION — RSA ASYMMETRIC
+# Using RSA keystore for encrypting sensitive config values.
+# Microservices receive decrypted values — they never see cipher text.
+#
+# Generate keystore:
+#   keytool -genkeypair -alias configserver \
+#           -keyalg RSA -keysize 2048 -validity 3650 \
+#           -keystore configserver.jks \
+#           -storepass yourpassword
+#
+# Encrypt a value:
+#   POST http://localhost:8071/encrypt
+#   Body: plaintext value
+#
+# Use in config files as:
+#   password: '{cipher}ENCRYPTED_VALUE'
+# =====================================================================
+# =====================================================================
+# ENCRYPTION — SYMMETRIC KEY (TEMPORARY)
+# Using simple symmetric encryption for now.
+#
+# TODO: Switch to asymmetric RSA encryption using JKS keystore for
+#       production-grade security. Steps:
+#       1. Generate keystore: keytool -genkeypair -alias configserver
+#          -keyalg RSA -keysize 2048 -keystore configserver.jks
+#       2. Replace encrypt.key with encrypt.key-store config
+#       3. Set KEY_STORE_PASSWORD and KEY_STORE_SECRET env variables
+# =====================================================================
+encrypt:
+  key: ${ENCRYPT_KEY}
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG
+    org.springframework.cloud.bus: DEBUG

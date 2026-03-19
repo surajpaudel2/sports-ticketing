@@ -1,22 +1,48 @@
+# =====================================================================
+# Startup order:
+#   1. Eureka Server  — starts first
+#   2. Config Server  — starts second, registers with Eureka
+#   3. This service   — starts last, discovers Config Server via Eureka
+# =====================================================================
+
 spring:
   application:
-    name: event-service
-  datasource:
-    url: jdbc:h2:mem:eventdb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-  jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-      settings:
-        web-allow-others: true
+    name: event-service  # Must match config file name in GitHub repo
 
-server:
-  port: 8081
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  # =====================================================================
+  # CONFIG IMPORT
+  # Tells Spring to fetch remaining config from Config Server.
+  # "optional:" means app still starts if Config Server is unreachable.
+  # Remove "optional:" to enforce fail-fast behavior.
+  # =====================================================================
+  config:
+    import: "optional:configserver:"
+
+  cloud:
+    config:
+      # Discover Config Server via Eureka — no hardcoded URL needed
+      discovery:
+        enabled: true
+        service-id: config-server
+      # Fail fast if Config Server is unreachable on startup
+      fail-fast: true
+      # Retry config if Config Server is temporarily unavailable
+      retry:
+        max-attempts: 6
+        initial-interval: 1000   # 1 second
+        max-interval: 2000       # 2 seconds
+        multiplier: 1.1
+
+# =====================================================================
+# EUREKA
+# Only hardcoded URL in the entire config — needed to discover
+# Config Server before anything else can be fetched.
+# Everything else comes from GitHub config repo via Config Server.
+# =====================================================================
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}

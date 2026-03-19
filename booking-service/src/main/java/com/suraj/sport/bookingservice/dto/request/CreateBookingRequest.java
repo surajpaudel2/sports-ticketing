@@ -1,5 +1,6 @@
 package com.suraj.sport.bookingservice.dto.request;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -21,4 +22,10 @@ public class CreateBookingRequest {
 
     @Min(value = 1, message = "Seats booked must be at least 1")
     private int seatsBooked;
+
+    @NotNull(message = "Payment method is required")
+    private String paymentMethod; // e.g. "CREDIT_CARD", "PAYPAL", etc.
+
+    @Email
+    private String recipientEmail; // For sending booking confirmation email
 }
