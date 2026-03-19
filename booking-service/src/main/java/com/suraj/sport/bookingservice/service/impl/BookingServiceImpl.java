@@ -168,22 +168,27 @@ public class BookingServiceImpl implements BookingService {
 
     /**
      * Retries payment for a PENDING booking.
-     * <p>
+     *
      * Flow:
-     * 1. Booking must be PENDING → else BookingNotRetryableException
-     * 2. Re-check seats availability — someone may have booked in between
-     * 3. Re-deduct seats in Event Service
-     * 4. Retry payment via Payment Service
-     * 5. Payment success → booking CONFIRMED
-     * 6. Payment failed → restore seats → stays PENDING
-     * <p>
-     * Note: Seats are re-checked and re-deducted on every retry because between
-     * the original PENDING state and the retry, seats may have been restored
-     * (due to payment failure) and taken by another user.
-     * <p>
+     *   1. Booking must exist → else BookingNotFoundException
+     *   2. Booking must be PENDING → else BookingNotRetryableException
+     *   3. Re-validate event — fetch event details and check availability
+     *   4. Re-deduct seats — seats were restored when previous payment failed
+     *   5. Retry payment via Payment Service
+     *   6. Payment success → booking CONFIRMED, notify user
+     *   7. Payment failed → restore seats, notify user, booking stays PENDING
+     *
+     * ARCHITECTURAL DECISION — Why we re-check and re-deduct seats on retry:
+     *   When previous payment failed, seats were restored to Event Service.
+     *   Between the original PENDING state and this retry, another user may have
+     *   booked those seats. We cannot assume seats are still available.
+     *   Therefore we treat every retry like a fresh seat deduction attempt.
+     *   This is different from initiatePayment where Booking Service already
+     *   handled seats before calling Payment Service.
+     *
      * TODO: implementPendingBookingScheduler()
-     * Scheduler to auto-cancel and soft delete PENDING bookings after event ends.
-     * Revisit when eventEndDate is added to Event Service.
+     *   Scheduler to auto-cancel and soft delete PENDING bookings after event ends.
+     *   Revisit when eventEndDate is added to Event Service.
      */
     @Override
     public BookingResponse retryPayment(Long bookingId) {
@@ -197,21 +202,26 @@ public class BookingServiceImpl implements BookingService {
                     "Only PENDING bookings can retry payment. Current status: " + booking.getBookingStatus());
         }
 
-        // TODO: checkSeatsAvailability(booking.getEventId(), booking.getSeatsBooked())
-        // Re-check seats — someone else may have booked in between
-        // Throw InsufficientSeatsException if seats no longer available
+        // Step 3: Re-validate event and re-check seat availability
+        // Seats were restored when previous payment failed — must re-check
+        EventClientResponse event = fetchAndValidateEventForRetry(booking);
 
-        // TODO: deductSeats(booking.getEventId(), booking.getSeatsBooked())
-        // Re-deduct seats in Event Service before retrying payment
+        // Step 4: Re-deduct seats before retrying payment
+        // FIXME: Race condition — same risk as createBooking. Revisit with Redis.
+        eventServiceClient.reduceSeats(booking.getEventId(), booking.getSeatsBooked());
 
-        // TODO: retryPayment(booking)
-        // Call Payment Service to retry payment for this booking
-        // On success → set bookingStatus = CONFIRMED, set paymentId
-        // On failure → restoreSeats(booking.getEventId(), booking.getSeatsBooked())
-        //              keep bookingStatus = PENDING, user can retry again
+        // Step 5: Retry payment via Payment Service
+        // Build payment request from existing booking data — no new request needed
+        PaymentClientResponse payment = retryPaymentWithGateway(booking);
 
-        // TODO: notifyUser(booking)
-        // Notify user of payment retry result via Notification Service
+        // Step 6 + 7: Handle payment result
+        // Success → confirm booking, notify user
+        // Failure → restore seats, notify user, booking stays PENDING
+        if (isPaymentSuccessful(payment)) {
+            booking = handleRetryPaymentSuccess(booking, event, payment);
+        } else {
+            handleRetryPaymentFailure(booking, event);
+        }
 
         return BookingMapper.mapToBookingResponse(booking);
     }
@@ -574,6 +584,101 @@ public class BookingServiceImpl implements BookingService {
                 .channel("EMAIL")
                 .recipientEmail(request.getRecipientEmail())
                 .templateVariables(variables)
+                .build());
+    }
+
+    /**
+     * Fetches and validates event for a payment retry.
+     * Same validation as createBooking — event must exist, be bookable, and have seats.
+     *
+     * Note: We reuse the same validation logic as createBooking because
+     * the event state may have changed since the original booking was made.
+     * e.g. event may have been CANCELLED, or seats may no longer be available.
+     */
+    private EventClientResponse fetchAndValidateEventForRetry(Booking booking) {
+        ApiResult<EventClientResponse> eventResult = eventServiceClient.getEventById(booking.getEventId());
+        EventClientResponse event = eventResult.getData();
+
+        if (event == null) {
+            throw new EventNotFoundException("Event not found with id: " + booking.getEventId());
+        }
+
+        if ("CANCELLED".equals(event.status()) || "COMPLETED".equals(event.status())) {
+            throw new EventNotBookableException(
+                    "Event is no longer bookable. Current status: " + event.status());
+        }
+
+        if (event.availableSeats() < booking.getSeatsBooked()) {
+            throw new InsufficientSeatsException(
+                    String.format("Seats no longer available for retry. Requested: %d, Available: %d",
+                            booking.getSeatsBooked(), event.availableSeats()));
+        }
+
+        return event;
+    }
+
+    /**
+     * Retries payment via Payment Service using existing booking data.
+     * Builds payment request from the existing booking — no new user input needed.
+     */
+    private PaymentClientResponse retryPaymentWithGateway(Booking booking) {
+        InitiatePaymentRequest paymentRequest = InitiatePaymentRequest.builder()
+                .bookingId(booking.getId())
+                .eventId(booking.getEventId())
+                .userId(booking.getUserId())
+                .amount(booking.getTotalAmount())
+                .paymentMethod(booking.getPaymentMethod())
+                .build();
+
+        ApiResult<PaymentClientResponse> paymentResult = paymentServiceClient.initiatePayment(paymentRequest);
+        return paymentResult.getData();
+    }
+
+    /**
+     * Handles successful payment retry — confirms booking and notifies user.
+     */
+    private Booking handleRetryPaymentSuccess(Booking booking, EventClientResponse event,
+                                              PaymentClientResponse payment) {
+        booking.setBookingStatus(BookingStatus.CONFIRMED);
+        booking.setPaymentId(payment.id());
+        Booking updatedBooking = bookingRepository.save(booking);
+
+        notificationServiceClient.sendNotification(NotificationRequest.builder()
+                .userId(updatedBooking.getUserId())
+                .notificationType("BOOKING_CONFIRMED")
+                .channel("EMAIL")
+                .recipientEmail(updatedBooking.getRecipientEmail())
+                .templateVariables(Map.of(
+                        "bookingId", updatedBooking.getId(),
+                        "eventName", event.name(),
+                        "eventDate", event.eventDate(),
+                        "venue", event.venue(),
+                        "seatsBooked", updatedBooking.getSeatsBooked(),
+                        "totalAmount", updatedBooking.getTotalAmount(),
+                        "receiptUrl", payment.receiptUrl() != null ? payment.receiptUrl() : ""
+                ))
+                .build());
+
+        return updatedBooking;
+    }
+
+    /**
+     * Handles failed payment retry — restores seats and notifies user.
+     * Booking stays PENDING — user can retry again.
+     */
+    private void handleRetryPaymentFailure(Booking booking, EventClientResponse event) {
+        eventServiceClient.restoreSeats(booking.getEventId(), booking.getSeatsBooked());
+
+        notificationServiceClient.sendNotification(NotificationRequest.builder()
+                .userId(booking.getUserId())
+                .notificationType("PAYMENT_FAILED")
+                .channel("EMAIL")
+                .recipientEmail(booking.getRecipientEmail())
+                .templateVariables(Map.of(
+                        "bookingId", booking.getId(),
+                        "eventName", event.name(),
+                        "amount", booking.getTotalAmount()
+                ))
                 .build());
     }
 }

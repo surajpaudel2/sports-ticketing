@@ -41,6 +41,12 @@ public class Booking {
     @Column(nullable = false)
     private double totalAmount;
 
+    @Column(nullable = false)
+    private String paymentMethod;
+
+    @Column(nullable = false)
+    private String recipientEmail;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BookingStatus bookingStatus;

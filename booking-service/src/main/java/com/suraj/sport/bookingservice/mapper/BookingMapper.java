@@ -23,6 +23,8 @@ public class BookingMapper {
                 .pricePerSeat(pricePerSeat)
                 .totalAmount(pricePerSeat * request.getSeatsBooked())
                 .bookingStatus(BookingStatus.PENDING)
+                .paymentMethod(request.getPaymentMethod())
+                .recipientEmail(request.getRecipientEmail())
                 .build();
     }
 
