@@ -99,6 +99,7 @@ public class BookingController {
                                     """))
             )
             @Valid @RequestBody CreateBookingRequest request) {
+        System.out.println("Booking creation request received: " + request);
         CreateBookingResponse response = bookingService.createBooking(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResult.of(true, "Booking Created Successfully", response));

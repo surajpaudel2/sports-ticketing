@@ -10,7 +10,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class ProcessRefundRequest {
+
     private Long paymentId;
+
     private double refundAmount;
+
     private String refundReason;
 }

@@ -25,34 +25,36 @@ public class PaymentServiceImpl implements PaymentService {
     private final TransactionRepository transactionRepository;
     private final RefundRepository refundRepository;
 
-    // =====================================================================
-    // INITIATE PAYMENT
-    // =====================================================================
+// =====================================================================
+// INITIATE PAYMENT
+// =====================================================================
 
     /**
      * Initiates a payment for a sports event booking.
      *
      * ARCHITECTURAL DECISION — Why we trust Booking Service:
      *   This method is called internally by Booking Service only — not by end users.
-     *   Booking Service has already handled all seat-related concerns:
+     *   Booking Service is the orchestrator and has already handled:
      *   - Event exists and is bookable
-     *   - Seats are available
-     *   - Seats have been deducted in Event Service
+     *   - Seats are available and deducted in Event Service
      *   Therefore Payment Service does NOT re-validate seats or event status.
-     *   This follows the Single Responsibility Principle — Payment Service owns
-     *   payment concerns only, not booking or seat concerns.
+     *   Single Responsibility Principle — Payment Service owns payment concerns only.
+     *
+     * ARCHITECTURAL DECISION — Why Payment Service does not notify Booking or Notification:
+     *   Booking Service is the orchestrator — it calls Payment Service and handles
+     *   all state updates and notifications based on the response returned here.
+     *   Having Payment Service call back to Booking Service would create a circular
+     *   dependency: Booking → Payment → Booking.
+     *   In Section 14, Kafka will replace this synchronous orchestration entirely.
      *
      * Flow:
      *   1. Create Payment record with PENDING status
      *   2. Create Transaction record with PENDING status
-     *   3. Call payment gateway (stubbed)
-     *   4. SUCCESS → update Payment and Transaction to SUCCESS
-     *   5. FAILED → update Payment and Transaction to FAILED
-     *              → notify Booking Service to restore seats
+     *   3. Call payment gateway (stubbed — always SUCCESS until real gateway is wired)
+     *   4. SUCCESS → update Payment and Transaction to SUCCESS, set receiptUrl
+     *   5. FAILED  → update Payment and Transaction to FAILED, set failureReason
      *
-     * FIXME: Replace synchronous gateway call with Kafka event publishing in Section 14.
-     *   Payment Service publishes PAYMENT_SUCCEEDED or PAYMENT_FAILED event.
-     *   Booking Service and Notification Service subscribe and react independently.
+     * TODO: Wire real payment gateway (Stripe/Razorpay) when credentials are available
      *
      * FIXME: Distributed transaction — if gateway call succeeds but DB update fails,
      *   payment is processed but not recorded. Implement SAGA pattern in Section 14.
@@ -60,65 +62,32 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentResponse initiatePayment(InitiatePaymentRequest request) {
 
-        //will create payment with pending status as 'PENDING' before saving to db.
+        // Step 1: Create Payment record with PENDING status
         Payment payment = PaymentMapper.mapToPayment(request);
         Payment savedPayment = paymentRepository.save(payment);
 
-        // will create transaction status as 'PENDING' before saving to db.
+        // Step 2: Create Transaction record with PENDING status
+        // Each payment attempt is tracked as a separate transaction record
         Transaction transaction = TransactionMapper.mapToTransaction(savedPayment);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
-        // TODO: callPaymentGateway(request)
-        // Integrate with Stripe/Razorpay to process the payment
-        // Pass: amount, paymentMethod, userId
-        // Returns: gatewayTransactionId, receiptUrl, success/failure status
-        boolean paymentSucceeded = true; // STUB — replace with actual gateway call
+        // Step 3: Call payment gateway
+        // TODO: replace with real Stripe/Razorpay gateway call
+        // For now stubbed as always SUCCESS — real gateway wired when credentials available
+        boolean paymentSucceeded = true; // STUB
 
         if (paymentSucceeded) {
-
-            // Update Payment to SUCCESS
-            savedPayment.setPaymentStatus(PaymentStatus.SUCCESS);
-            savedPayment.setReceiptUrl("https://receipts.stub.com/" + savedPayment.getId()); // STUB
-            paymentRepository.save(savedPayment);
-
-            // Update Transaction to SUCCESS
-            savedTransaction.setTransactionStatus(TransactionStatus.SUCCESS);
-            savedTransaction.setGatewayTransactionId("GATEWAY_TX_STUB_" + savedTransaction.getId()); // STUB
-            transactionRepository.save(savedTransaction);
-
-            // TODO: notifyBookingService(savedPayment)
-            // Call Booking Service to update booking status to CONFIRMED
-            // Set paymentId on the booking record
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
-            // TODO: notifyNotificationService(savedPayment)
-            // Publish PAYMENT_SUCCEEDED event
-            // Notification Service sends confirmation email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
+            savedPayment = handleGatewaySuccess(savedPayment, savedTransaction);
         } else {
-
-            // Update Payment to FAILED
-            savedPayment.setPaymentStatus(PaymentStatus.FAILED);
-            paymentRepository.save(savedPayment);
-
-            // Update Transaction to FAILED
-            savedTransaction.setTransactionStatus(TransactionStatus.FAILED);
-            savedTransaction.setFailureReason("Payment gateway declined the transaction"); // STUB
-            transactionRepository.save(savedTransaction);
-
-            // TODO: notifyBookingService(savedPayment)
-            // Call Booking Service to keep booking as PENDING and restore seats in Event Service
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
-            // TODO: notifyNotificationService(savedPayment)
-            // Publish PAYMENT_FAILED event
-            // Notification Service sends payment failure email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
+            savedPayment = handleGatewayFailure(savedPayment, savedTransaction);
         }
 
         return PaymentMapper.mapToPaymentResponse(savedPayment);
     }
+
+    // =====================================================================
+    // PROCESS REFUND
+    // =====================================================================
 
     /**
      * Processes a refund for a payment.
@@ -127,30 +96,32 @@ public class PaymentServiceImpl implements PaymentService {
      *   - Full refund: refundAmount equals payment.amount
      *   - Partial refund: refundAmount is less than payment.amount
      *
-     * NOTE: refundAmount is ALWAYS calculated and provided by Booking Service —
-     *   Payment Service never calculates refund amounts itself.
-     *   Booking Service owns the pricing logic because it holds pricePerSeat and seatsBooked.
-     *   Example: user booked 3 seats at $100 each, cancels 1 seat →
-     *   Booking Service calculates refundAmount = 1 * pricePerSeat = $100 and sends it here.
+     * NOTE: refundAmount is ALWAYS calculated and provided by Booking Service.
+     *   Booking Service owns pricing logic — pricePerSeat and seatsBooked.
      *   Payment Service simply processes whatever amount Booking Service sends.
-     *   This follows Single Responsibility Principle — Booking Service owns booking/pricing
-     *   concerns, Payment Service owns payment/refund processing concerns.
+     *   Single Responsibility Principle — Booking Service owns booking/pricing concerns,
+     *   Payment Service owns payment/refund processing concerns.
      *
      * ARCHITECTURAL DECISION — Gateway refund approach:
-     *   The gateway does not need to know about internal booking logic.
+     *   Gateway does not need to know about internal booking logic.
      *   We simply tell it "refund $X from transaction Y" and it processes it.
      *   This keeps Payment Service clean and gateway-agnostic.
      *
+     * ARCHITECTURAL DECISION — Why Payment Service does not notify Notification Service:
+     *   Booking Service handles all notifications based on refund response returned here.
+     *   In Section 14, Kafka will replace this synchronous orchestration.
+     *
      * Flow:
      *   1. Find payment or throw PaymentNotFoundException
-     *   2. Validate payment is SUCCESS or PARTIALLY_REFUNDED → else throw PaymentNotRefundableException
-     *   3. Validate refundAmount <= remaining refundable amount → else throw InvalidRefundAmountException
+     *   2. Validate payment is SUCCESS or PARTIALLY_REFUNDED
+     *   3. Validate refundAmount <= remaining refundable amount
      *   4. Create Refund record with PENDING status
-     *   5. Call gateway refund API (stubbed)
-     *   6. SUCCESS → update Refund to SUCCESS, update Payment to REFUNDED or PARTIALLY_REFUNDED
-     *   7. FAILED → update Refund to FAILED
+     *   5. Call gateway refund API (stubbed — always SUCCESS)
+     *   6. SUCCESS → update Refund to SUCCESS, update Payment to REFUNDED/PARTIALLY_REFUNDED
+     *   7. FAILED  → update Refund to FAILED
      *
-     * FIXME: Replace synchronous gateway call with Kafka event in Section 14.
+     * TODO: Wire real gateway refund API when credentials are available
+     *
      * FIXME: Implement idempotency — prevent duplicate refunds for same booking cancellation.
      */
     @Override
@@ -159,7 +130,7 @@ public class PaymentServiceImpl implements PaymentService {
         // Edge case: payment must exist
         Payment payment = findPaymentOrThrow(request.getPaymentId());
 
-        // Edge case: only SUCCESS payments can be refunded
+        // Edge case: only SUCCESS or PARTIALLY_REFUNDED payments can be refunded
         if (payment.getPaymentStatus() != PaymentStatus.SUCCESS &&
                 payment.getPaymentStatus() != PaymentStatus.PARTIALLY_REFUNDED) {
             throw new PaymentNotRefundableException(
@@ -184,76 +155,55 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
         Refund savedRefund = refundRepository.save(refund);
 
-        // TODO: callGatewayRefundAPI(payment, refund)
-        // Call Stripe/Razorpay refund API with:
-        // - gatewayTransactionId from original successful transaction
-        // - refundAmount
-        // Returns: gatewayRefundId, success/failure status
-        boolean refundSucceeded = true; // STUB — replace with actual gateway call
+        // Call gateway refund API
+        // TODO: replace with real Stripe/Razorpay refund API call
+        // Pass: gatewayTransactionId from original successful transaction, refundAmount
+        // For now stubbed as always SUCCESS
+        boolean refundSucceeded = true; // STUB
 
         if (refundSucceeded) {
-
-            // Update Refund to SUCCESS
-            savedRefund.setRefundStatus(RefundStatus.SUCCESS);
-            savedRefund.setGatewayRefundId("GATEWAY_REFUND_STUB_" + savedRefund.getId()); // STUB
-            savedRefund.setRefundedAt(LocalDateTime.now());
-            refundRepository.save(savedRefund);
-
-            // Update Payment status — PARTIALLY_REFUNDED or REFUNDED
-            double newTotalRefunded = totalAlreadyRefunded + request.getRefundAmount();
-            if (newTotalRefunded >= payment.getAmount()) {
-                payment.setPaymentStatus(PaymentStatus.REFUNDED);
-            } else {
-                payment.setPaymentStatus(PaymentStatus.PARTIALLY_REFUNDED);
-            }
-            paymentRepository.save(payment);
-
-            // TODO: notifyNotificationService(savedRefund)
-            // Publish REFUND_SUCCEEDED event
-            // Notification Service sends refund confirmation email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
+            savedRefund = handleRefundSuccess(savedRefund, payment, totalAlreadyRefunded, request.getRefundAmount());
         } else {
-
-            // Update Refund to FAILED
-            savedRefund.setRefundStatus(RefundStatus.FAILED);
-            savedRefund.setFailureReason("Gateway declined the refund"); // STUB
-            refundRepository.save(savedRefund);
-
-            // TODO: notifyNotificationService(savedRefund)
-            // Publish REFUND_FAILED event
-            // Notification Service sends refund failure email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
+            savedRefund = handleRefundFailure(savedRefund);
         }
 
         return PaymentMapper.mapToRefundResponse(savedRefund);
     }
 
-    // =====================================================================
-    // RETRY PAYMENT
-    // =====================================================================
+// =====================================================================
+// RETRY PAYMENT — INTERNAL ENDPOINT
+// =====================================================================
 
     /**
      * Retries a failed or pending payment.
      *
-     * ARCHITECTURAL DECISION — Why we re-check seats here but not in initiatePayment:
-     *   - initiatePayment: called by Booking Service which already deducted seats → trust it
-     *   - retryPayment: payment previously failed → seats were restored → other users
-     *     may have booked those seats in between → MUST re-check and re-deduct
-     *   This is a conscious decision to prevent the trap where:
-     *   user retries payment → payment succeeds → but seats no longer available
+     * INTERNAL ENDPOINT — not exposed to end users.
+     * Should only be called by Booking Service via FeignClient.
+     * In production, secured via API Gateway rules or service token.
+     * Once Kafka is implemented in Section 14, this endpoint will be replaced
+     * by event-driven communication — Booking Service publishes PAYMENT_RETRY_REQUESTED
+     * and Payment Service reacts independently.
+     *
+     * ARCHITECTURAL DECISION — Why seat re-check is NOT done here:
+     *   Retry always goes through Booking Service which already handles seat
+     *   re-check and re-deduction before calling this endpoint.
+     *   Payment Service trusts that Booking Service has handled seats — same
+     *   principle as initiatePayment.
+     *
+     * ARCHITECTURAL DECISION — Why Payment Service does not notify Booking or Notification:
+     *   Booking Service is the orchestrator — handles all state updates and
+     *   notifications based on the response returned here.
      *
      * Flow:
      *   1. Find payment or throw PaymentNotFoundException
-     *   2. Validate payment is FAILED or PENDING → else throw PaymentNotRetryableException
-     *   3. Re-check seats in Event Service — someone may have booked in between
-     *   4. Re-deduct seats in Event Service
-     *   5. Create new Transaction record for this retry attempt
-     *   6. Call payment gateway
-     *   7. SUCCESS → update Payment and Transaction to SUCCESS
-     *   8. FAILED → update Payment and Transaction to FAILED, restore seats
+     *   2. Validate payment is FAILED or PENDING
+     *   3. Create new Transaction record for this retry attempt
+     *   4. Update Payment back to PENDING
+     *   5. Call payment gateway (stubbed — always SUCCESS)
+     *   6. SUCCESS → update Payment and Transaction to SUCCESS
+     *   7. FAILED  → update Payment and Transaction to FAILED
      *
-     * FIXME: Replace synchronous calls with Kafka events in Section 14.
+     * TODO: Wire real payment gateway when credentials are available
      */
     @Override
     public PaymentResponse retryPayment(Long paymentId) {
@@ -269,71 +219,24 @@ public class PaymentServiceImpl implements PaymentService {
                             + payment.getPaymentStatus());
         }
 
-        // TODO: checkSeatsAvailability(payment.getEventId(), seatsBooked)
-        // IMPORTANT: Must re-check seats — payment failed previously, seats were restored
-        // Other users may have booked those seats in between
-        // Call Event Service to verify seats are still available
-        // Throw InsufficientSeatsException if seats no longer available
-        // Revisit in Section 8
-
-        // TODO: deductSeats(payment.getEventId(), seatsBooked)
-        // Re-deduct seats in Event Service before attempting payment
-        // Only proceed if deduction is successful
-        // Revisit in Section 8
-
         // Create new Transaction record for this retry attempt
+        // Each retry is tracked separately for audit purposes
         Transaction transaction = TransactionMapper.mapToTransaction(payment);
         Transaction savedTransaction = transactionRepository.save(transaction);
 
-        // Update Payment back to PENDING for this retry
+        // Reset Payment to PENDING for this retry
         payment.setPaymentStatus(PaymentStatus.PENDING);
         paymentRepository.save(payment);
 
-        // TODO: callPaymentGateway(payment)
-        // Retry payment with same amount and payment method
-        // Returns: gatewayTransactionId, success/failure status
-        boolean paymentSucceeded = true; // STUB — replace with actual gateway call
+        // Call payment gateway
+        // TODO: replace with real Stripe/Razorpay gateway call
+        // For now stubbed as always SUCCESS
+        boolean paymentSucceeded = true; // STUB
 
         if (paymentSucceeded) {
-
-            // Update Payment to SUCCESS
-            payment.setPaymentStatus(PaymentStatus.SUCCESS);
-            payment.setReceiptUrl("https://receipts.stub.com/" + payment.getId()); // STUB
-            paymentRepository.save(payment);
-
-            // Update Transaction to SUCCESS
-            savedTransaction.setTransactionStatus(TransactionStatus.SUCCESS);
-            savedTransaction.setGatewayTransactionId("GATEWAY_TX_STUB_" + savedTransaction.getId()); // STUB
-            transactionRepository.save(savedTransaction);
-
-            // TODO: notifyBookingService(payment)
-            // Call Booking Service to update booking status to CONFIRMED
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
-            // TODO: notifyNotificationService(payment)
-            // Publish PAYMENT_SUCCEEDED event
-            // Notification Service sends confirmation email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
+            payment = handleGatewaySuccess(payment, savedTransaction);
         } else {
-
-            // Update Payment to FAILED
-            payment.setPaymentStatus(PaymentStatus.FAILED);
-            paymentRepository.save(payment);
-
-            // Update Transaction to FAILED
-            savedTransaction.setTransactionStatus(TransactionStatus.FAILED);
-            savedTransaction.setFailureReason("Payment gateway declined the transaction"); // STUB
-            transactionRepository.save(savedTransaction);
-
-            // TODO: notifyBookingService(payment)
-            // Notify Booking Service to restore seats in Event Service
-            // Revisit in Section 8 — replace with Kafka event in Section 14
-
-            // TODO: notifyNotificationService(payment)
-            // Publish PAYMENT_FAILED event
-            // Notification Service sends payment failure email/SMS to user
-            // Revisit in Section 8 — replace with Kafka event in Section 14
+            payment = handleGatewayFailure(payment, savedTransaction);
         }
 
         return PaymentMapper.mapToPaymentResponse(payment);
@@ -389,6 +292,72 @@ public class PaymentServiceImpl implements PaymentService {
     // =====================================================================
 
     /**
+     * Handles successful gateway response — updates Payment and Transaction to SUCCESS.
+     * Sets receiptUrl and gatewayTransactionId from gateway response.
+     * Currently stubbed — real values come from Stripe/Razorpay when wired.
+     */
+    private Payment handleGatewaySuccess(Payment payment, Transaction transaction) {
+        payment.setPaymentStatus(PaymentStatus.SUCCESS);
+        payment.setReceiptUrl("https://receipts.stub.com/" + payment.getId()); // STUB
+        Payment savedPayment = paymentRepository.save(payment);
+
+        transaction.setTransactionStatus(TransactionStatus.SUCCESS);
+        transaction.setGatewayTransactionId("GATEWAY_TX_STUB_" + transaction.getId()); // STUB
+        transactionRepository.save(transaction);
+
+        return savedPayment;
+    }
+
+    /**
+     * Handles failed gateway response — updates Payment and Transaction to FAILED.
+     * Sets failureReason from gateway response.
+     * Currently stubbed — real reason comes from Stripe/Razorpay when wired.
+     */
+    private Payment handleGatewayFailure(Payment payment, Transaction transaction) {
+        payment.setPaymentStatus(PaymentStatus.FAILED);
+        Payment savedPayment = paymentRepository.save(payment);
+
+        transaction.setTransactionStatus(TransactionStatus.FAILED);
+        transaction.setFailureReason("Payment gateway declined the transaction"); // STUB
+        transactionRepository.save(transaction);
+
+        return savedPayment;
+    }
+
+    /**
+     * Handles successful refund — updates Refund to SUCCESS.
+     * Updates Payment to REFUNDED or PARTIALLY_REFUNDED based on total refunded amount.
+     */
+    private Refund handleRefundSuccess(Refund refund, Payment payment,
+                                       double totalAlreadyRefunded, double refundAmount) {
+        refund.setRefundStatus(RefundStatus.SUCCESS);
+        refund.setGatewayRefundId("GATEWAY_REFUND_STUB_" + refund.getId()); // STUB
+        refund.setRefundedAt(LocalDateTime.now());
+        Refund savedRefund = refundRepository.save(refund);
+
+        // Update Payment status — PARTIALLY_REFUNDED or fully REFUNDED
+        double newTotalRefunded = totalAlreadyRefunded + refundAmount;
+        if (newTotalRefunded >= payment.getAmount()) {
+            payment.setPaymentStatus(PaymentStatus.REFUNDED);
+        } else {
+            payment.setPaymentStatus(PaymentStatus.PARTIALLY_REFUNDED);
+        }
+        paymentRepository.save(payment);
+
+        return savedRefund;
+    }
+
+    /**
+     * Handles failed refund — updates Refund to FAILED.
+     * Payment status remains unchanged — refund can be retried.
+     */
+    private Refund handleRefundFailure(Refund refund) {
+        refund.setRefundStatus(RefundStatus.FAILED);
+        refund.setFailureReason("Gateway declined the refund"); // STUB
+        return refundRepository.save(refund);
+    }
+
+    /**
      * Fetches the payment by ID or throws PaymentNotFoundException if not found.
      */
     private Payment findPaymentOrThrow(Long paymentId) {
@@ -399,7 +368,6 @@ public class PaymentServiceImpl implements PaymentService {
 
     /**
      * Calculates the total amount already refunded for a payment.
-     * Used to validate new refund requests do not exceed refundable amount.
      * Only counts SUCCESS refunds — PENDING and FAILED refunds are not counted.
      */
     private double calculateTotalRefunded(Long paymentId) {

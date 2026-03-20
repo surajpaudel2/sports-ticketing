@@ -15,8 +15,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class InitiatePaymentRequest {
     private Long bookingId;
+
     private Long eventId;
+
     private Long userId;
+
     private double amount;
+
     private String paymentMethod;
 }

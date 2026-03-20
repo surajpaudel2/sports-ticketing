@@ -298,6 +298,7 @@ public class EventController {
     public ResponseEntity<ApiResult<EventResponse>> getEventById(
             @Parameter(description = "ID of the event to retrieve", required = true, example = "1")
             @PathVariable Long eventId) {
+        System.out.println("Received request to get event with ID: " + eventId);
         EventResponse eventResponse = eventService.getEventById(eventId);
         return ResponseEntity.ok(ApiResult.of(true, "Event Retrieved Successfully", eventResponse));
     }
@@ -437,7 +438,7 @@ public class EventController {
             )
     })
     @PatchMapping("/{eventId}/reduce-seats")
-    public ResponseEntity<ApiResult<Void>> reduceAvailableSeats(
+    public ResponseEntity<ApiResult<Void>> reduceSeats(
             @Parameter(description = "ID of the event", required = true, example = "1")
             @PathVariable Long eventId,
             @Parameter(description = "Number of seats to reduce", required = true, example = "2")
@@ -472,7 +473,7 @@ public class EventController {
             )
     })
     @PatchMapping("/{eventId}/restore-seats")
-    public ResponseEntity<ApiResult<Void>> restoreAvailableSeats(
+    public ResponseEntity<ApiResult<Void>> restoreSeats(
             @Parameter(description = "ID of the event", required = true, example = "1")
             @PathVariable Long eventId,
             @Parameter(description = "Number of seats to restore", required = true, example = "2")

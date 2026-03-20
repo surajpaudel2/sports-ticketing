@@ -19,8 +19,12 @@ import java.util.Map;
 @NoArgsConstructor
 public class NotificationRequest {
     private Long userId;
+
     private String notificationType;
+
     private String channel;
+
     private String recipientEmail;
+
     private Map<String, Object> templateVariables;
 }
