@@ -7,6 +7,7 @@ import com.ticketing.event.exception.EventNotFoundException;
 import com.ticketing.event.exception.InsufficientSeatsException;
 import com.ticketing.event.repository.EventRepository;
 import com.ticketing.event.service.EventService;
+import com.ticketing.event.service.SeatCacheService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

@@ -70,6 +70,7 @@ public class BookingServiceImpl implements BookingService {
         // FeignException is caught here because seats were deducted and a PENDING booking exists —
         // both must be compensated (booking failed, seats released) before returning to the caller
         try {
+            //TODO: - use bigdecimal or something like that to avoid floating point issues — this is just a demo
             long amountInSmallestUnit =
                     Math.round((double) booking.getSeatsBooked() * booking.getPricePerSeat() * 100);
 

@@ -56,6 +56,28 @@
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
 
+        <!-- ===== Persistence (Outbox Pattern) ===== -->
+
+        <!--
+            Spring Data JPA — provides the JPA/Hibernate stack and Spring Data repositories
+            used by OutboxEventRepository and the OutboxEvent entity.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+            H2 in-memory database — stores OutboxEvent rows between the Stripe webhook
+            arrival and the OutboxEventPoller's RabbitMQ delivery.
+            Replace with a persistent datasource (e.g. PostgreSQL) for production.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- ===== Messaging ===== -->
 
         <!--
@@ -117,6 +139,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
     </dependencies>

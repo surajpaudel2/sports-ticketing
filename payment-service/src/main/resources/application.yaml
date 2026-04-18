@@ -1,6 +1,8 @@
 spring:
   application:
     name: PAYMENT-SERVICE   # Must match the Eureka service name used in Feign clients (e.g. booking-service PaymentServiceClient)
+  profiles:
+    active: dev   # Switch to 'prod' for production — prod profile uses PostgreSQL (see application-prod.yaml or remove this line)
 
   # RabbitMQ connection — must be running locally or via Docker before starting this service
   rabbitmq:
@@ -8,6 +10,30 @@ spring:
     port: 5672
     username: guest
     password: guest
+
+  # H2 in-memory database — used by the Outbox Pattern to persist OutboxEvent rows
+  # before they are delivered to RabbitMQ by OutboxEventPoller.
+  # Replace with a persistent datasource (e.g. PostgreSQL) for production deployments.
+  datasource:
+    url: jdbc:h2:mem:paymentdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop   # Recreates the schema on each restart — fine for dev; use validate/none in prod
+    show-sql: false
+
+  h2:
+    console:
+      enabled: true   # H2 web console available at http://localhost:8084/h2-console (dev only)
+
+  # Enables Spring's @Scheduled task executor — required by OutboxEventPoller.
+  # Actual scheduling is activated via @EnableScheduling on PaymentServiceApplication.
+  scheduling:
+    enabled: true
 
 server:
   port: 8084   # Payment Service port — must not conflict with other services (Booking=8082, Event=8083, Eureka=8761)

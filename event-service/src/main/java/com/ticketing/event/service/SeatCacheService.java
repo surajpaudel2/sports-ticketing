@@ -1,16 +1,12 @@
-package com.ticketing.event.service.impl;
+package com.ticketing.event.service;
 
 import com.ticketing.event.entity.Event;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Manages the Redis seat-availability cache for events.
+ * Contract for managing the Redis seat-availability cache for events.
  *
  * <p><strong>Key pattern:</strong> {@code event:seats:{eventId}} → integer string
  * representing the current available seat count for that event.</p>
@@ -20,14 +16,7 @@ import java.util.Optional;
  * lock, reducing contention under concurrent load. A cache miss must always fall back
  * to the database rather than blocking a valid booking.</p>
  */
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class SeatCacheService {
-
-    private static final String SEAT_CACHE_KEY_PREFIX = "event:seats:";
-
-    private final StringRedisTemplate redisTemplate;
+public interface SeatCacheService {
 
     /**
      * Returns the cached available seat count for the given event, or empty if
@@ -36,10 +25,7 @@ public class SeatCacheService {
      * @param eventId the event primary key
      * @return the cached seat count, or {@link Optional#empty()} on a cache miss
      */
-    public Optional<Integer> getSeatCount(Long eventId) {
-        String cached = redisTemplate.opsForValue().get(buildKey(eventId));
-        return Optional.ofNullable(cached).map(Integer::parseInt);
-    }
+    Optional<Integer> getSeatCount(Long eventId);
 
     /**
      * Writes (or overwrites) the available seat count for the given event into Redis.
@@ -50,9 +36,7 @@ public class SeatCacheService {
      * @param eventId the event primary key
      * @param seats   the current available seat count to store
      */
-    public void setSeatCount(Long eventId, int seats) {
-        redisTemplate.opsForValue().set(buildKey(eventId), String.valueOf(seats));
-    }
+    void setSeatCount(Long eventId, int seats);
 
     /**
      * Warms the seat cache for a batch of events.
@@ -64,16 +48,5 @@ public class SeatCacheService {
      *
      * @param activeEvents the events whose seat counts should be cached
      */
-    public void warmCache(List<Event> activeEvents) {
-        for (Event event : activeEvents) {
-            setSeatCount(event.getId(), event.getAvailableSeats());
-        }
-        log.info("Redis seat cache initialised with {} active events", activeEvents.size());
-    }
-
-    // ── private ──────────────────────────────────────────────────────────────────
-
-    private String buildKey(Long eventId) {
-        return SEAT_CACHE_KEY_PREFIX + eventId;
-    }
+    void warmCache(List<Event> activeEvents);
 }
