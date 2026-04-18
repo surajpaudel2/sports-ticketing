@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: EVENT-SERVICE   # Must match the Eureka service name used in Feign clients (e.g. booking-service EventServiceClient)
+
+  profiles:
+    active: dev   # Switch to 'prod' for production — prod profile uses PostgreSQL (see application-prod.yaml or remove this line)
+
+  # PostgreSQL datasource — active when profile is NOT dev (e.g. prod)
+  # To re-enable: remove the 'profiles.active: dev' above or switch to 'prod'
+#  datasource:
+#    url: jdbc:postgresql://localhost:5432/event_db
+#    username: postgres
+#    password: postgres
+#    driver-class-name: org.postgresql.Driver
+#
+#  jpa:
+#    hibernate:
+#      ddl-auto: update   # Use 'validate' in production — 'update' is for development only
+#    show-sql: true
+#    properties:
+#      hibernate:
+#        format_sql: true   # Pretty-prints SQL in logs for readability during development
+
+  # Redis — used for seat-availability caching ahead of the DB optimistic-lock check
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password: ""   # Uncomment and set if Redis requires authentication
+
+server:
+  port: 8083   # Event Service port — must not conflict with other services (Booking=8082, Eureka=8761)
+
+# Eureka — registers this service so other services (e.g. booking-service) can discover it by name
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/   # Eureka Server URL
+  instance:
+    prefer-ip-address: true   # Use IP instead of hostname for service registration
+
+# Swagger UI available at http://localhost:8083/swagger-ui.html
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: BOOKING-SERVICE   # Must match the Eureka service name used in Feign clients
+
+  profiles:
+    active: dev   # Override via env var SPRING_PROFILES_ACTIVE=prod when deploying
+
+  # PostgreSQL datasource — booking_db is a dedicated database for this service (microservices own their data)
+  # Overridden by application-dev.yaml when the dev profile is active
+  datasource:
+    url: jdbc:postgresql://localhost:5432/booking_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # Use 'validate' in production — 'update' is for development only
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true   # Pretty-prints SQL in logs for readability during development
+
+  # RabbitMQ connection — must be running locally or via Docker before starting this service
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        # Manual ack mode — BookingEventListener explicitly acks/nacks each message so that
+        # RabbitMQ does not re-queue a message on success, and does re-queue on unexpected failure.
+        # AUTO mode would ack as soon as the listener method returns, which loses control
+        # over the ack/nack decision inside the listener.
+        acknowledge-mode: manual
+
+server:
+  port: 8082   # Booking Service port — must not conflict with other services
+
+# Eureka — registers this service so other services can discover it by name
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/   # Eureka Server URL
+  instance:
+    prefer-ip-address: true   # Use IP instead of hostname for service registration
+
+# Swagger UI available at http://localhost:8082/swagger-ui.html
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+## Stripe configuration
+## NEVER hardcode the secret key here — always inject via environment variable.
+## Set STRIPE_SECRET_KEY in your local environment or Docker Compose env section.
+## Test keys start with sk_test_... | Live keys start with sk_live_...
+#stripe:
+#  secret-key: ${STRIPE_SECRET_KEY}
