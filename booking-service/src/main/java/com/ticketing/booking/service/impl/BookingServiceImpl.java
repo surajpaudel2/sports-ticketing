@@ -2,10 +2,12 @@ package com.ticketing.booking.service.impl;
 
 import com.ticketing.booking.client.EventServiceClient;
 import com.ticketing.booking.client.PaymentServiceClient;
+import com.ticketing.booking.dto.cache.BookingCacheDto;
 import com.ticketing.booking.dto.request.InitiateBookingRequest;
 import com.ticketing.booking.dto.request.InitiatePaymentIntentRequest;
 import com.ticketing.booking.dto.response.*;
 import com.ticketing.booking.entity.Booking;
+import com.ticketing.booking.service.BookingCacheService;
 import com.ticketing.booking.service.BookingPersistenceService;
 import com.ticketing.booking.service.BookingService;
 import feign.FeignException;
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Service;
  *   initiatePaymentIntent (Payment Service)  ─── creates Stripe PaymentIntent
  *           ↓ success
  *   storePaymentIntentId (DB)
+ *           ↓ success
+ *   cacheBookingSnapshot (Redis, TTL 30 min)
  *           ↓
  *   return {bookingId, clientSecret, totalAmount} to frontend
  * </pre>
@@ -51,6 +55,7 @@ public class BookingServiceImpl implements BookingService {
     private final EventServiceClient eventServiceClient;
     private final PaymentServiceClient paymentServiceClient;
     private final BookingPersistenceService bookingPersistenceService;
+    private final BookingCacheService bookingCacheService;
 
     @Override
     public ApiResult<InitiateBookingResponse> initiateBooking(InitiateBookingRequest request) {
@@ -87,7 +92,20 @@ public class BookingServiceImpl implements BookingService {
             booking = bookingPersistenceService.storePaymentIntentId(
                     booking, paymentResult.getData().paymentIntentId());
 
-            // Step 5 — return clientSecret to frontend for stripe.confirmPayment()
+            // TODO - try to remove event name from the db. It is only used for email content, and we can fetch it from the event service when we consume the payment success event. This way we can avoid data duplication and potential inconsistencies if the event name changes after the booking is initiated but before the payment success event is consumed.
+            // Step 5 — cache booking snapshot for fast access in BookingEventListener and email service
+            bookingCacheService.save(new BookingCacheDto(
+                    booking.getId(),
+                    booking.getUserId(),
+                    booking.getEventId(),
+                    booking.getEventName(),
+                    booking.getSeatsBooked(),
+                    booking.getPricePerSeat(),
+                    booking.getRecipientEmail(),
+                    booking.getStripePaymentIntentId()
+            ));
+
+            // Step 6 — return clientSecret to frontend for stripe.confirmPayment()
             // clientSecret is NOT stored on the entity — it is transient sensitive data
             InitiateBookingResponse response = bookingPersistenceService.toInitiateResponse(
                     booking, paymentResult.getData().clientSecret());

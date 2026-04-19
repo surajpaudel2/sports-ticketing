@@ -21,6 +21,11 @@ spring:
       hibernate:
         format_sql: true   # Pretty-prints SQL in logs for readability during development
 
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
   # RabbitMQ connection — must be running locally or via Docker before starting this service
   rabbitmq:
     host: localhost

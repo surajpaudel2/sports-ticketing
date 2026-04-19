@@ -32,8 +32,9 @@ public class BookingPersistenceServiceImpl implements BookingPersistenceService 
         Booking booking = Booking.builder()
                 .userId(request.userId())
                 .eventId(request.eventId())
+                .eventName(eventBookingResponse.eventName())
                 .seatsBooked(request.seatsBooked())
-                // Snapshot price from Event Service — locked in at initiation time
+                // Snapshot price and event name from Event Service — locked in at initiation time
                 .pricePerSeat(eventBookingResponse.pricePerSeat())
                 .paymentMethod(request.paymentMethod())
                 .recipientEmail(resolveEmail(request))
@@ -90,6 +91,18 @@ public class BookingPersistenceServiceImpl implements BookingPersistenceService 
         Booking saved = bookingRepository.save(booking);
         log.debug("Failed bookingId={} reason={}", saved.getId(), reason);
         return saved;
+    }
+
+    @Override
+    public void confirmBookingById(Long bookingId) {
+        bookingRepository.updateStatus(bookingId, BookingStatus.CONFIRMED);
+        log.debug("Confirmed (targeted update) bookingId={}", bookingId);
+    }
+
+    @Override
+    public void failBookingById(Long bookingId, String reason) {
+        bookingRepository.updateStatusAndReason(bookingId, BookingStatus.FAILED, reason);
+        log.debug("Failed (targeted update) bookingId={} reason={}", bookingId, reason);
     }
 
     @Override

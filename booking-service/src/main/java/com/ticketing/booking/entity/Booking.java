@@ -36,6 +36,8 @@ public class Booking {
     @Column(nullable = false)
     private Long eventId; // Reference to Event Service — no FK constraint, microservices own their data
 
+    private String eventName; // Snapshot from Event Service at booking time — for notifications/receipts
+
     // Populated after Stripe PaymentIntent is created — null if event validation failed before we reached Stripe.
     // Stored as a string because Stripe IDs are prefixed strings (e.g. "pi_3OqX..."), not numeric.
     private String stripePaymentIntentId;

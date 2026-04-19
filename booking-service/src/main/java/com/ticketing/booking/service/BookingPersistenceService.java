@@ -84,6 +84,19 @@ public interface BookingPersistenceService {
     Booking failBooking(Booking booking, String reason);
 
     /**
+     * Targeted UPDATE — transitions the booking to CONFIRMED by ID without loading the entity.
+     * Used by {@code BookingEventListener} when the booking snapshot is available from Redis,
+     * making the {@code findById} DB read unnecessary.
+     */
+    void confirmBookingById(Long bookingId);
+
+    /**
+     * Targeted UPDATE — transitions the booking to FAILED by ID without loading the entity.
+     * Used by {@code BookingEventListener} when the booking snapshot is available from Redis.
+     */
+    void failBookingById(Long bookingId, String reason);
+
+    /**
      * Fetches a booking by its primary key.
      *
      * <p>Throws {@link jakarta.persistence.EntityNotFoundException} if no booking exists

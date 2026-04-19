@@ -1,5 +1,6 @@
 package com.ticketing.booking.service;
 
+import com.ticketing.booking.dto.cache.BookingCacheDto;
 import com.ticketing.booking.entity.Booking;
 
 /**
@@ -40,4 +41,10 @@ public interface BookingEventPublisher {
      * @param booking the FAILED booking to notify about
      */
     void publishBookingFailed(Booking booking);
+
+    /** Fast path — publishes confirmed event directly from the Redis cache snapshot. */
+    void publishBookingConfirmed(BookingCacheDto cached);
+
+    /** Fast path — publishes failed event directly from the Redis cache snapshot. */
+    void publishBookingFailed(BookingCacheDto cached, String reason);
 }
