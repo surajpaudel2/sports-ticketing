@@ -1,33 +1,30 @@
-package com.ticketing.booking.service.impl;
+package com.ticketing.booking.messaging.publisher;
 
 import com.ticketing.booking.config.RabbitMQConfig;
 import com.ticketing.booking.dto.cache.BookingCacheDto;
 import com.ticketing.booking.dto.event.BookingResultEvent;
 import com.ticketing.booking.entity.Booking;
 import com.ticketing.booking.entity.BookingStatus;
-import com.ticketing.booking.service.BookingEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
-@Service
+@Component
 @RequiredArgsConstructor
 @Slf4j
-public class BookingEventPublisherImpl implements BookingEventPublisher {
+public class BookingEventPublisher {
 
     private final RabbitTemplate rabbitTemplate;
 
     // ===== Slow path (DB entity) =====
 
-    @Override
     public void publishBookingConfirmed(Booking booking) {
         BookingResultEvent event = fromEntity(booking);
         log.info("Publishing booking.confirmed bookingId={} userId={}", booking.getId(), booking.getUserId());
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.BOOKING_CONFIRMED_ROUTING_KEY, event);
     }
 
-    @Override
     public void publishBookingFailed(Booking booking) {
         BookingResultEvent event = fromEntity(booking);
         log.info("Publishing booking.failed bookingId={} userId={} reason={}",
@@ -36,15 +33,12 @@ public class BookingEventPublisherImpl implements BookingEventPublisher {
     }
 
     // ===== Fast path (Redis cache) =====
-
-    @Override
     public void publishBookingConfirmed(BookingCacheDto cached) {
         BookingResultEvent event = fromCache(cached, BookingStatus.CONFIRMED, null);
         log.info("Publishing booking.confirmed (cache) bookingId={} userId={}", cached.bookingId(), cached.userId());
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, RabbitMQConfig.BOOKING_CONFIRMED_ROUTING_KEY, event);
     }
 
-    @Override
     public void publishBookingFailed(BookingCacheDto cached, String reason) {
         BookingResultEvent event = fromCache(cached, BookingStatus.FAILED, reason);
         log.info("Publishing booking.failed (cache) bookingId={} userId={} reason={}",
@@ -61,7 +55,6 @@ public class BookingEventPublisherImpl implements BookingEventPublisher {
                 .bookingStatus(booking.getBookingStatus())
                 .recipientEmail(booking.getRecipientEmail())
                 .eventId(booking.getEventId())
-                .eventName(booking.getEventName())
                 .seatsBooked(booking.getSeatsBooked())
                 .pricePerSeat(booking.getPricePerSeat())
                 .totalAmount((double) booking.getSeatsBooked() * booking.getPricePerSeat())

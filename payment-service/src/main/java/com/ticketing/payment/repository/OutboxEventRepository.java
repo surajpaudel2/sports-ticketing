@@ -2,6 +2,7 @@ package com.ticketing.payment.repository;
 
 import com.ticketing.payment.entity.OutboxEvent;
 import com.ticketing.payment.entity.OutboxStatus;
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -11,7 +12,7 @@ import java.util.UUID;
  * Spring Data JPA repository for {@link OutboxEvent} persistence.
  *
  * <p>Provides standard CRUD operations inherited from {@link JpaRepository} plus a
- * custom query method used by the {@link com.ticketing.payment.outbox.OutboxEventPoller}
+ * custom query method used by the {@link OutboxEventSchedular}
  * to retrieve all events that are waiting to be delivered to RabbitMQ.</p>
  */
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> {

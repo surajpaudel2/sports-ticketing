@@ -92,13 +92,12 @@ public class BookingServiceImpl implements BookingService {
             booking = bookingPersistenceService.storePaymentIntentId(
                     booking, paymentResult.getData().paymentIntentId());
 
-            // TODO - try to remove event name from the db. It is only used for email content, and we can fetch it from the event service when we consume the payment success event. This way we can avoid data duplication and potential inconsistencies if the event name changes after the booking is initiated but before the payment success event is consumed.
             // Step 5 — cache booking snapshot for fast access in BookingEventListener and email service
             bookingCacheService.save(new BookingCacheDto(
                     booking.getId(),
                     booking.getUserId(),
                     booking.getEventId(),
-                    booking.getEventName(),
+                    eventResult.getData().eventName(),
                     booking.getSeatsBooked(),
                     booking.getPricePerSeat(),
                     booking.getRecipientEmail(),

@@ -1,6 +1,7 @@
 package com.ticketing.payment.service;
 
 import com.stripe.exception.SignatureVerificationException;
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 
 /**
  * Encapsulates all business logic for processing incoming Stripe webhook events.
@@ -16,7 +17,7 @@ import com.stripe.exception.SignatureVerificationException;
  *       ({@code bookingId}, failure reason) from the event.</li>
  *   <li>Persist an {@link com.ticketing.payment.entity.OutboxEvent} with status
  *       {@code PENDING} — publishing to RabbitMQ is deferred to
- *       {@link com.ticketing.payment.outbox.OutboxEventPoller}.</li>
+ *       {@link OutboxEventSchedular}.</li>
  * </ul>
  *
  * <p>The controller delegates entirely to this interface and never directly interacts

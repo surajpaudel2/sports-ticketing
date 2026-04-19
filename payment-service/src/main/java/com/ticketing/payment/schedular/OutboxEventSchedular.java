@@ -1,12 +1,12 @@
-package com.ticketing.payment.outbox;
+package com.ticketing.payment.schedular;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ticketing.payment.dto.event.PaymentFailedEvent;
 import com.ticketing.payment.dto.event.PaymentSuccessEvent;
 import com.ticketing.payment.entity.OutboxEvent;
 import com.ticketing.payment.entity.OutboxStatus;
+import com.ticketing.payment.messaging.publisher.PaymentEventPublisher;
 import com.ticketing.payment.repository.OutboxEventRepository;
-import com.ticketing.payment.service.PaymentEventPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -35,7 +35,7 @@ import java.util.List;
  */
 @Component
 @Slf4j
-public class OutboxEventPoller {
+public class OutboxEventSchedular {
 
     /** Interval between the end of one poll and the start of the next, in milliseconds. */
     private static final long POLL_INTERVAL_MS = 3000L;
@@ -54,7 +54,7 @@ public class OutboxEventPoller {
      * @param paymentEventPublisher  publisher that delivers events to the RabbitMQ exchange
      * @param objectMapper           Jackson mapper used to deserialize stored JSON payloads
      */
-    public OutboxEventPoller(
+    public OutboxEventSchedular(
             OutboxEventRepository outboxEventRepository,
             PaymentEventPublisher paymentEventPublisher,
             ObjectMapper objectMapper) {

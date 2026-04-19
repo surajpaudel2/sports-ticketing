@@ -1,5 +1,6 @@
 package com.ticketing.payment.entity;
 
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -13,7 +14,7 @@ import java.util.UUID;
  * RabbitMQ inside a Stripe webhook handler (which risks losing the event if the broker is
  * unavailable), the service writes an {@code OutboxEvent} row in the same database
  * transaction as any other state change. A background poller
- * ({@link com.ticketing.payment.outbox.OutboxEventPoller}) then reads {@code PENDING} rows
+ * ({@link OutboxEventSchedular}) then reads {@code PENDING} rows
  * and delivers them to RabbitMQ, retrying on failure.</p>
  *
  * <p><strong>Event lifecycle:</strong> {@code PENDING → PUBLISHED} on success,
@@ -37,7 +38,7 @@ public class OutboxEvent {
 
     /**
      * Stripe event type string (e.g. {@code payment_intent.succeeded}) used by the
-     * {@link com.ticketing.payment.outbox.OutboxEventPoller} to determine which RabbitMQ
+     * {@link OutboxEventSchedular} to determine which RabbitMQ
      * publish method to call.
      */
     @Column(nullable = false)

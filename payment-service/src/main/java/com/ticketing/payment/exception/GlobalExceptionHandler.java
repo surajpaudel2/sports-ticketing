@@ -3,6 +3,7 @@ package com.ticketing.payment.exception;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.ticketing.payment.dto.response.ApiResult;
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.AmqpException;
 import org.springframework.http.HttpStatus;
@@ -119,7 +120,7 @@ public class GlobalExceptionHandler {
      * Handles RabbitMQ messaging failures propagated from {@link AmqpException} subtypes.
      *
      * <p>Returns HTTP 500 — broker unavailability is a server-side infrastructure problem,
-     * not a client error. The {@link com.ticketing.payment.outbox.OutboxEventPoller} handles
+     * not a client error. The {@link OutboxEventSchedular} handles
      * retries for deferred outbox delivery; this handler covers any synchronous publish paths.</p>
      *
      * @param ex the AMQP exception thrown when the broker is unreachable or rejects a message

@@ -1,4 +1,4 @@
-package com.ticketing.booking.listener;
+package com.ticketing.booking.messaging.listener;
 
 import com.rabbitmq.client.Channel;
 import com.ticketing.booking.client.EventServiceClient;
@@ -8,8 +8,8 @@ import com.ticketing.booking.dto.event.PaymentFailedEvent;
 import com.ticketing.booking.dto.event.PaymentSuccessEvent;
 import com.ticketing.booking.entity.Booking;
 import com.ticketing.booking.entity.BookingStatus;
+import com.ticketing.booking.messaging.publisher.BookingEventPublisher;
 import com.ticketing.booking.service.BookingCacheService;
-import com.ticketing.booking.service.BookingEventPublisher;
 import com.ticketing.booking.service.BookingPersistenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

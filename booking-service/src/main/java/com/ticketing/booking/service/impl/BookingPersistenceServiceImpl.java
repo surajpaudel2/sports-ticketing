@@ -32,7 +32,6 @@ public class BookingPersistenceServiceImpl implements BookingPersistenceService 
         Booking booking = Booking.builder()
                 .userId(request.userId())
                 .eventId(request.eventId())
-                .eventName(eventBookingResponse.eventName())
                 .seatsBooked(request.seatsBooked())
                 // Snapshot price and event name from Event Service — locked in at initiation time
                 .pricePerSeat(eventBookingResponse.pricePerSeat())

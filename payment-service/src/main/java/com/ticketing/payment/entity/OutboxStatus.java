@@ -1,10 +1,12 @@
 package com.ticketing.payment.entity;
 
+import com.ticketing.payment.schedular.OutboxEventSchedular;
+
 /**
  * Lifecycle states for an {@link OutboxEvent}.
  *
  * <p>An event starts as {@code PENDING}, transitions to {@code PUBLISHED} once the
- * {@link com.ticketing.payment.outbox.OutboxEventPoller} successfully delivers it to
+ * {@link OutboxEventSchedular} successfully delivers it to
  * RabbitMQ, and is marked {@code FAILED} after the maximum number of retry attempts
  * has been exhausted without a successful publish.</p>
  */

@@ -1,13 +1,12 @@
-package com.ticketing.payment.service.impl;
+package com.ticketing.payment.messaging.publisher;
 
 import com.ticketing.payment.config.RabbitMQConfig;
 import com.ticketing.payment.dto.event.PaymentFailedEvent;
 import com.ticketing.payment.dto.event.PaymentSuccessEvent;
-import com.ticketing.payment.service.PaymentEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 
 /**
  * Publishes payment outcome events to Booking Service via RabbitMQ.
@@ -16,14 +15,13 @@ import org.springframework.stereotype.Service;
  * {@code sports.ticketing.payment.failed} — so Booking Service can consume each
  * independently with separate {@code @RabbitListener} methods.</p>
  */
-@Service
+@Component
 @RequiredArgsConstructor
 @Slf4j
-public class PaymentEventPublisherImpl implements PaymentEventPublisher {
+public class PaymentEventPublisher {
 
     private final RabbitTemplate rabbitTemplate;
 
-    @Override
     public void publishPaymentSuccess(Long bookingId, String stripePaymentIntentId, long amount) {
         PaymentSuccessEvent event = PaymentSuccessEvent.builder()
                 .bookingId(bookingId)
@@ -41,7 +39,6 @@ public class PaymentEventPublisherImpl implements PaymentEventPublisher {
         );
     }
 
-    @Override
     public void publishPaymentFailed(Long bookingId, String reason) {
         PaymentFailedEvent event = PaymentFailedEvent.builder()
                 .bookingId(bookingId)

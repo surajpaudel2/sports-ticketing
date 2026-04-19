@@ -1,6 +1,7 @@
 package com.ticketing.payment.controller;
 
 import com.stripe.exception.SignatureVerificationException;
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 import com.ticketing.payment.service.StripeWebhookService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.*;
  *
  * <p>All business logic (PaymentIntent extraction, bookingId parsing, outbox writes)
  * lives in {@link StripeWebhookService} and its implementation. RabbitMQ publishing is
- * deferred to {@link com.ticketing.payment.outbox.OutboxEventPoller}.</p>
+ * deferred to {@link OutboxEventSchedular}.</p>
  *
  * <p>All other event types are acknowledged with HTTP 200 and ignored — Stripe requires
  * a 200 response within 30 seconds to consider the event delivered. Non-200 responses

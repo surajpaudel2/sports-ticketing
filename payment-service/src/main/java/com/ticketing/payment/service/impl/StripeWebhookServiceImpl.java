@@ -13,6 +13,7 @@ import com.ticketing.payment.dto.event.PaymentSuccessEvent;
 import com.ticketing.payment.entity.OutboxEvent;
 import com.ticketing.payment.entity.OutboxStatus;
 import com.ticketing.payment.repository.OutboxEventRepository;
+import com.ticketing.payment.schedular.OutboxEventSchedular;
 import com.ticketing.payment.service.StripeWebhookService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,7 +38,7 @@ import java.time.Instant;
  * </ol>
  *
  * <p>RabbitMQ delivery is intentionally <em>not</em> performed here — it is deferred to
- * {@link com.ticketing.payment.outbox.OutboxEventPoller}, which polls the outbox table
+ * {@link OutboxEventSchedular}, which polls the outbox table
  * on a fixed schedule and retries on broker failures.</p>
  */
 @Service
