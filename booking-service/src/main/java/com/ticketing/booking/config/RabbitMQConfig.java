@@ -16,15 +16,23 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p><strong>Message flow:</strong></p>
  * <pre>
- *   Payment Service  →  payment.success.queue  →  BookingEventListener#handlePaymentSuccess
- *   Payment Service  →  payment.failed.queue   →  BookingEventListener#handlePaymentFailed
- *   BookingService   →  booking.notification.queue  →  Notification Service
+ * Payment Service  →  payment.success.queue  →  BookingEventListener#handlePaymentSuccess
+ * Payment Service  →  payment.failed.queue   →  BookingEventListener#handlePaymentFailed
+ * BookingService   →  booking.notification.queue  →  Notification Service
  * </pre>
  */
 @Configuration
 public class RabbitMQConfig {
 
+// =============================================================================
+//                         CONSTANTS (ROUTING KEYS & QUEUES)
+// =============================================================================
+
     // ===== Exchange =====
+
+    public static final String BOOKING_CANCELLED_ROUTING_KEY              = "booking.cancelled";
+    public static final String BOOKING_CANCELLATION_RECEIVED_ROUTING_KEY  = "booking.cancellation.received";
+    public static final String BOOKING_CANCELLATION_REJECTED_ROUTING_KEY  = "booking.cancellation.rejected";
 
     /** Single topic exchange for the entire sports-ticketing platform. */
     public static final String EXCHANGE = "sports.ticketing.exchange";
@@ -56,6 +64,27 @@ public class RabbitMQConfig {
     /** Outbound queue — receives all booking outcome events; consumed by Notification Service. */
     public static final String BOOKING_NOTIFICATION_QUEUE = "booking.notification.queue";
 
+    // ===== Cancellation Routing Keys & Queues =====
+
+    public static final String CANCELLATION_REQUESTED_ROUTING_KEY = "cancellation.requested";
+    public static final String CANCELLATION_APPROVED_ROUTING_KEY  = "cancellation.approved";
+    public static final String CANCELLATION_REJECTED_ROUTING_KEY  = "cancellation.rejected";
+    public static final String CANCELLATION_FAILED_ROUTING_KEY    = "cancellation.failed";
+
+    public static final String CANCELLATION_REQUESTED_QUEUE = "cancellation.requested.queue";
+    public static final String CANCELLATION_APPROVED_QUEUE  = "cancellation.approved.queue";
+    public static final String CANCELLATION_REJECTED_QUEUE  = "cancellation.rejected.queue";
+    public static final String CANCELLATION_FAILED_QUEUE    = "cancellation.failed.queue";
+
+// =============================================================================
+//                       CONSTANTS (ROUTING KEYS & QUEUES) END
+// =============================================================================
+
+
+// =============================================================================
+//                         EXCHANGE CONFIGURATION
+// =============================================================================
+
     // ===== Exchange bean =====
 
     /**
@@ -67,6 +96,15 @@ public class RabbitMQConfig {
     public TopicExchange sportTicketingExchange() {
         return new TopicExchange(EXCHANGE);
     }
+
+// =============================================================================
+//                       EXCHANGE CONFIGURATION END
+// =============================================================================
+
+
+// =============================================================================
+//                         PAYMENT QUEUES & BINDINGS
+// =============================================================================
 
     // ===== Queue beans =====
 
@@ -80,15 +118,6 @@ public class RabbitMQConfig {
     @Bean
     public Queue paymentFailedQueue() {
         return QueueBuilder.durable(PAYMENT_FAILED_QUEUE).build();
-    }
-
-    /**
-     * Single queue for all booking outcomes — Notification Service uses the wildcard
-     * binding {@code sports.ticketing.booking.*} to receive both confirmed and failed events.
-     */
-    @Bean
-    public Queue bookingNotificationQueue() {
-        return QueueBuilder.durable(BOOKING_NOTIFICATION_QUEUE).build();
     }
 
     // ===== Binding beans =====
@@ -105,6 +134,24 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(paymentFailedQueue).to(sportTicketingExchange).with(PAYMENT_FAILED_ROUTING_KEY);
     }
 
+// =============================================================================
+//                       PAYMENT QUEUES & BINDINGS END
+// =============================================================================
+
+
+// =============================================================================
+//                         BOOKING QUEUES & BINDINGS
+// =============================================================================
+
+    /**
+     * Single queue for all booking outcomes — Notification Service uses the wildcard
+     * binding {@code sports.ticketing.booking.*} to receive both confirmed and failed events.
+     */
+    @Bean
+    public Queue bookingNotificationQueue() {
+        return QueueBuilder.durable(BOOKING_NOTIFICATION_QUEUE).build();
+    }
+
     /**
      * Wildcard binding — catches both {@code booking.confirmed} and {@code booking.failed}
      * in one queue, so Notification Service has a single consumption point.
@@ -113,6 +160,88 @@ public class RabbitMQConfig {
     public Binding bookingNotificationBinding(Queue bookingNotificationQueue, TopicExchange sportTicketingExchange) {
         return BindingBuilder.bind(bookingNotificationQueue).to(sportTicketingExchange).with("sports.ticketing.booking.*");
     }
+
+// =============================================================================
+//                       BOOKING QUEUES & BINDINGS END
+// =============================================================================
+
+
+// =============================================================================
+//                         CANCELLATION QUEUES & BINDINGS
+// =============================================================================
+
+    // ===== Queue beans =====
+
+    /** Durable — survives broker restart so no cancellation requested events are lost. */
+    @Bean
+    public Queue cancellationRequestedQueue() {
+        return QueueBuilder.durable(CANCELLATION_REQUESTED_QUEUE).build();
+    }
+
+    /** Durable — survives broker restart so no cancellation approved events are lost. */
+    @Bean
+    public Queue cancellationApprovedQueue() {
+        return QueueBuilder.durable(CANCELLATION_APPROVED_QUEUE).build();
+    }
+
+    /** Durable — survives broker restart so no cancellation rejected events are lost. */
+    @Bean
+    public Queue cancellationRejectedQueue() {
+        return QueueBuilder.durable(CANCELLATION_REJECTED_QUEUE).build();
+    }
+
+    /** Durable — survives broker restart so no cancellation failed events are lost. */
+    @Bean
+    public Queue cancellationFailedQueue() {
+        return QueueBuilder.durable(CANCELLATION_FAILED_QUEUE).build();
+    }
+
+    // ===== Binding beans =====
+
+    /** Binds the cancellation requested queue to its respective routing key. */
+    @Bean
+    public Binding cancellationRequestedBinding(Queue cancellationRequestedQueue, TopicExchange sportsTicketingExchange) {
+        return BindingBuilder
+                .bind(cancellationRequestedQueue)
+                .to(sportsTicketingExchange)
+                .with(CANCELLATION_REQUESTED_ROUTING_KEY);
+    }
+
+    /** Binds the cancellation approved queue to its respective routing key. */
+    @Bean
+    public Binding cancellationApprovedBinding(Queue cancellationApprovedQueue, TopicExchange sportsTicketingExchange) {
+        return BindingBuilder
+                .bind(cancellationApprovedQueue)
+                .to(sportsTicketingExchange)
+                .with(CANCELLATION_APPROVED_ROUTING_KEY);
+    }
+
+    /** Binds the cancellation rejected queue to its respective routing key. */
+    @Bean
+    public Binding cancellationRejectedBinding(Queue cancellationRejectedQueue, TopicExchange sportsTicketingExchange) {
+        return BindingBuilder
+                .bind(cancellationRejectedQueue)
+                .to(sportsTicketingExchange)
+                .with(CANCELLATION_REJECTED_ROUTING_KEY);
+    }
+
+    /** Binds the cancellation failed queue to its respective routing key. */
+    @Bean
+    public Binding cancellationFailedBinding(Queue cancellationFailedQueue, TopicExchange sportsTicketingExchange) {
+        return BindingBuilder
+                .bind(cancellationFailedQueue)
+                .to(sportsTicketingExchange)
+                .with(CANCELLATION_FAILED_ROUTING_KEY);
+    }
+
+// =============================================================================
+//                       CANCELLATION QUEUES & BINDINGS END
+// =============================================================================
+
+
+// =============================================================================
+//                         INFRASTRUCTURE CONFIGURATION
+// =============================================================================
 
     // ===== Message converter and template =====
 
@@ -142,11 +271,11 @@ public class RabbitMQConfig {
      *
      * <p>Two critical settings:</p>
      * <ul>
-     *   <li>Message converter — ensures incoming JSON payloads are deserialized into
-     *       {@code PaymentSuccessEvent} / {@code PaymentFailedEvent} records automatically.</li>
-     *   <li>Acknowledge mode MANUAL — the listener explicitly calls {@code channel.basicAck()}
-     *       or {@code channel.basicNack()} so RabbitMQ acknowledgement is tied to the outcome
-     *       of the business logic, not just method return.</li>
+     * <li>Message converter — ensures incoming JSON payloads are deserialized into
+     * {@code PaymentSuccessEvent} / {@code PaymentFailedEvent} records automatically.</li>
+     * <li>Acknowledge mode MANUAL — the listener explicitly calls {@code channel.basicAck()}
+     * or {@code channel.basicNack()} so RabbitMQ acknowledgement is tied to the outcome
+     * of the business logic, not just method return.</li>
      * </ul>
      */
     @Bean
@@ -159,4 +288,9 @@ public class RabbitMQConfig {
         factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
         return factory;
     }
+
+// =============================================================================
+//                       INFRASTRUCTURE CONFIGURATION END
+// =============================================================================
+
 }

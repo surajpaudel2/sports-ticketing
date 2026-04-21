@@ -8,6 +8,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * Repository for the {@link Booking} entity.
  *
@@ -33,4 +36,24 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Transactional
     @Query("UPDATE Booking b SET b.bookingStatus = :status, b.failureReason = :reason WHERE b.id = :id")
     void updateStatusAndReason(@Param("id") Long id, @Param("status") BookingStatus status, @Param("reason") String reason);
+
+    /**
+     * Used by FailedBookingSeatReleaseScheduler to find bookings
+     * where compensation (seat release) has not yet completed.
+     */
+    List<Booking> findAllByBookingStatusAndSeatsReleasedFalse(BookingStatus bookingStatus);
+
+    /**
+     * Used by PendingBookingExpiryScheduler to find bookings
+     * that have exceeded the payment window and must be expired.
+     */
+    List<Booking> findAllByBookingStatusAndCreatedAtBefore(
+            BookingStatus bookingStatus, LocalDateTime threshold);
+
+    /**
+     * Used by PendingBookingReminderScheduler to find bookings
+     * approaching expiry that haven't had a reminder sent yet.
+     */
+    List<Booking> findAllByBookingStatusAndCreatedAtBetweenAndReminderSentFalse(
+            BookingStatus bookingStatus, LocalDateTime start, LocalDateTime end);
 }

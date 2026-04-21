@@ -9,3 +9,16 @@ spring:
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
+
+booking:
+  pending-expiry-minutes: 15
+  pending-reminder-minutes: 10
+  scheduler:
+    reminder-interval-ms: 120000    # runs every 2 minutes
+    expiry-interval-ms: 60000       # runs every 1 minute
+    seat-release-interval-ms: 60000 # runs every 1 minute\
+
+cancellation:
+  full-refund-hours: 48
+  partial-refund-hours: 24
+  partial-refund-percentage: 50

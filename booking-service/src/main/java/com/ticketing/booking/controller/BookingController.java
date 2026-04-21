@@ -1,9 +1,11 @@
 package com.ticketing.booking.controller;
 
 import com.ticketing.booking.controller.docs.InitiateBookingDocs;
+import com.ticketing.booking.dto.request.CancelBookingRequest;
 import com.ticketing.booking.dto.request.InitiateBookingRequest;
 import com.ticketing.booking.dto.response.ApiResult;
 import com.ticketing.booking.dto.response.BookingStatusResponse;
+import com.ticketing.booking.dto.response.CancelBookingResponse;
 import com.ticketing.booking.dto.response.InitiateBookingResponse;
 import com.ticketing.booking.service.BookingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,5 +78,28 @@ public class BookingController {
 
         ApiResult<BookingStatusResponse> result = bookingService.getBookingStatus(bookingId);
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Cancels an existing booking — partially or fully.
+     *
+     * <p>PENDING bookings are cancelled immediately with seat restoration.
+     * CONFIRMED bookings enter admin review ({@code CANCELLATION_REQUESTED})
+     * with a recommended refund calculated from live event date.</p>
+     *
+     * @see CancelBookingRequest
+     * @see CancelBookingResponse
+     */
+    @PatchMapping("/{bookingId}/cancel")
+    public ResponseEntity<ApiResult<CancelBookingResponse>> cancelBooking(
+            @PathVariable Long bookingId,
+            @Valid @RequestBody CancelBookingRequest request) {
+
+        ApiResult<CancelBookingResponse> result = bookingService.cancelBooking(bookingId, request);
+        return ResponseEntity.ok(ApiResult.of()
+                .success(result.isSuccess())
+                .message(result.getMessage())
+                .data(result.getData())
+                .build());
     }
 }

@@ -1,4 +1,4 @@
-package com.ticketing.notification.listener;
+package com.ticketing.notification.messaging.listener;
 
 import com.rabbitmq.client.Channel;
 import com.ticketing.notification.config.RabbitMQConfig;

@@ -135,6 +135,28 @@ public class BookingPersistenceServiceImpl implements BookingPersistenceService 
     }
 
     /**
+     * Marks seats as released after successful compensation by the scheduler.
+     * Called only by FailedBookingSeatReleaseScheduler.
+     */
+    @Override
+    public void markSeatsReleased(Booking booking) {
+        booking.setSeatsReleased(true);
+        bookingRepository.save(booking);
+        log.info("Seats marked as released: bookingId={}", booking.getId());
+    }
+
+    /**
+     * Marks reminder as sent to prevent duplicate emails on scheduler retry.
+     * Called only by PendingBookingReminderScheduler.
+     */
+    @Override
+    public void markReminderSent(Booking booking) {
+        booking.setReminderSent(true);
+        bookingRepository.save(booking);
+        log.info("Reminder marked as sent: bookingId={}", booking.getId());
+    }
+
+    /**
      * Resolves the recipient email for notifications.
      * Uses the email provided in the request if present; otherwise falls back to a placeholder.
      * TODO: fetch from User Service when inter-service user lookup is wired.

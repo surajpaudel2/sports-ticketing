@@ -128,4 +128,8 @@ public interface BookingPersistenceService {
      * @return the status response containing bookingId, bookingStatus, and failureReason
      */
     BookingStatusResponse toStatusResponse(Booking booking);
+
+    void markSeatsReleased(Booking booking);
+
+    void markReminderSent(Booking booking);
 }

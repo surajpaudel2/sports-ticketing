@@ -21,5 +21,13 @@ public enum BookingStatus {
     PENDING,
     CONFIRMED,
     FAILED,
-    CANCELLED
+    CANCELLED,
+
+    CANCELLATION_REQUESTED,
+// CONFIRMED booking — cancellation submitted, awaiting admin review
+// Prevents duplicate cancellation requests on same booking
+
+    CANCELLATION_FAILED
+// Seat restoration or Stripe refund failed during admin approval
+// Requires manual intervention — admin is notified via event
 }

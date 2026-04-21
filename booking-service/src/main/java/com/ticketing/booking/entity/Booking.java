@@ -26,6 +26,10 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class Booking {
 
+    // ==========================================
+    // 1. PRIMARY KEY & REFERENCES
+    // ==========================================
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -36,20 +40,47 @@ public class Booking {
     @Column(nullable = false)
     private Long eventId; // Reference to Event Service — no FK constraint, microservices own their data
 
-    // Populated after Stripe PaymentIntent is created — null if event validation failed before we reached Stripe.
-    // Stored as a string because Stripe IDs are prefixed strings (e.g. "pi_3OqX..."), not numeric.
-    private String stripePaymentIntentId;
+    // ==========================================
+    // 2. CORE DOMAIN DATA
+    // ==========================================
+
+    @Column(nullable = false)
+    private LocalDateTime eventDate;
+// Snapshot at booking time — for audit trail and display purposes ONLY
+// NEVER used for refund policy calculation — live Feign call used instead
+// (event may be rescheduled after booking — snapshot would be stale for money decisions)
+// Must be set in createPendingBooking() from Event Service response
 
     @Column(nullable = false)
     private int seatsBooked; // Snapshot at booking time — needed for compensation event on payment failure
 
     @Column(nullable = false)
+    private int activeSeatCount;
+// Starts equal to seatsBooked at booking creation time
+// Decreases on each partial cancellation
+// When activeSeatCount == 0 → booking status = CANCELLED
+// Stays CONFIRMED if activeSeatCount > 0 after partial cancel
+// Must be set in createPendingBooking() — activeSeatCount = seatsBooked
+
+    @Column(nullable = false)
     private double pricePerSeat; // Snapshot at booking time — event price may change later, we lock in the price at booking moment
+
+    // ==========================================
+    // 3. PAYMENT & CONTACT INFO
+    // ==========================================
+
+    private String recipientEmail; // Programmatically populated from request or fallback to user account email
 
     @Column(nullable = false)
     private String paymentMethod;
 
-    private String recipientEmail; // Programmatically populated from request or fallback to user account email
+    // Populated after Stripe PaymentIntent is created — null if event validation failed before we reached Stripe.
+    // Stored as a string because Stripe IDs are prefixed strings (e.g. "pi_3OqX..."), not numeric.
+    private String stripePaymentIntentId;
+
+    // ==========================================
+    // 4. STATUS & WORKFLOW
+    // ==========================================
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -58,6 +89,33 @@ public class Booking {
     private String failureReason; // Populated only when status=FAILED — system-generated reason (e.g. payment failed, event not found)
 
     private String cancellationReason; // Populated only when status=CANCELLED — user-driven reason
+
+    // ==========================================
+    // 5. SYSTEM FLAGS
+    // ==========================================
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean seatsReleased = false;
+// Set to true by FailedBookingSeatReleaseScheduler after successful seat release
+// Prevents double-release on scheduler retry
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean reminderSent = false;
+// Set to true after payment reminder email is sent
+// Prevents duplicate reminder emails on scheduler retry
+
+    // ==========================================
+    // 6. AUDIT & METADATA
+    // ==========================================
+
+    @Version
+    private Long version;
+// Optimistic locking — detects concurrent modification between read and write
+// Prevents stale eventDate being used for refund calculation if a reschedule
+// happens between cancelBooking() read and save
+// Throws OptimisticLockException on conflict → catch and retry with fresh read
 
     @CreationTimestamp
     @Column(updatable = false)

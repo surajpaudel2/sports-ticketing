@@ -1,4 +1,4 @@
-package com.ticketing.booking.dto.event;
+package com.ticketing.booking.messaging.payload;
 
 import lombok.Builder;
 

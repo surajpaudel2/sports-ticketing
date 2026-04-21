@@ -2,9 +2,12 @@ package com.ticketing.booking.messaging.publisher;
 
 import com.ticketing.booking.config.RabbitMQConfig;
 import com.ticketing.booking.dto.cache.BookingCacheDto;
-import com.ticketing.booking.dto.event.BookingResultEvent;
+import com.ticketing.booking.messaging.payload.BookingCancelledEvent;
+import com.ticketing.booking.messaging.payload.BookingResultEvent;
 import com.ticketing.booking.entity.Booking;
 import com.ticketing.booking.entity.BookingStatus;
+import com.ticketing.booking.messaging.payload.CancellationFailedEvent;
+import com.ticketing.booking.messaging.payload.CancellationRejectedNotificationEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -76,4 +79,57 @@ public class BookingEventPublisher {
                 .reason(reason)
                 .build();
     }
+
+    // =============================================================================
+//                        CANCELLATION PUBLISHING
+// =============================================================================
+
+    public void publishCancellationRequested(CancellationRequestedEvent event) {
+        log.info("Publishing cancellation.requested bookingId={} userId={}",
+                event.bookingId(), event.userId());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.CANCELLATION_REQUESTED_ROUTING_KEY,
+                event);
+    }
+
+    public void publishCancellationReceived(CancellationReceivedEvent event) {
+        log.info("Publishing booking.cancellation.received bookingId={} userId={}",
+                event.bookingId(), event.userId());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.BOOKING_CANCELLATION_RECEIVED_ROUTING_KEY,
+                event);
+    }
+
+    public void publishBookingCancelled(BookingCancelledEvent event) {
+        log.info("Publishing booking.cancelled bookingId={} userId={} refundType={}",
+                event.bookingId(), event.userId(), event.refundType());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.BOOKING_CANCELLED_ROUTING_KEY,
+                event);
+    }
+
+    public void publishCancellationFailed(Long bookingId, String failureReason) {
+        CancellationFailedEvent event = new CancellationFailedEvent(bookingId, failureReason);
+        log.error("Publishing cancellation.failed bookingId={} reason={}", bookingId, failureReason);
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.CANCELLATION_FAILED_ROUTING_KEY,
+                event);
+    }
+
+    public void publishCancellationRejected(CancellationRejectedNotificationEvent event) {
+        log.info("Publishing booking.cancellation.rejected bookingId={} userId={}",
+                event.bookingId(), event.userId());
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.EXCHANGE,
+                RabbitMQConfig.BOOKING_CANCELLATION_REJECTED_ROUTING_KEY,
+                event);
+    }
+
+// =============================================================================
+//                      CANCELLATION PUBLISHING END
+// =============================================================================
 }

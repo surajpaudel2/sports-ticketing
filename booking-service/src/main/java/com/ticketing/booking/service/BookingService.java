@@ -38,7 +38,7 @@ public interface BookingService {
      * @param request the booking initiation request from the client
      * @return success result with {@link InitiateBookingResponse}, or failure result with reason
      */
-    ApiResult<InitiateBookingResponse> initiateBooking(InitiateBookingRequest request);
+    InitiateBookingResponse initiateBooking(InitiateBookingRequest request);
 
     /**
      * Retrieves the current status of a booking for frontend status polling.

@@ -3,6 +3,7 @@ package com.ticketing.booking.client;
 import com.ticketing.booking.dto.response.ApiResult;
 import com.ticketing.booking.dto.response.EventBookingResponse;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -78,4 +79,14 @@ public interface EventServiceClient {
             @PathVariable Long eventId,
             @RequestParam int seats
     );
+
+    /**
+     * Fetches live event details including current eventDate.
+     *
+     * <p>Used in cancelBooking() to get authoritative eventDate for refund
+     * policy calculation. NOT the snapshot on Booking entity — that may
+     * be stale if the organiser rescheduled after booking.</p>
+     */
+    @GetMapping("/api/v1/events/{eventId}")
+    ApiResult<EventResponse> getEvent(@PathVariable Long eventId);
 }

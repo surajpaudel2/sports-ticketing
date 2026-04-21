@@ -1,40 +1,30 @@
 package com.ticketing.booking.messaging.listener;
 
-import com.rabbitmq.client.Channel;
 import com.ticketing.booking.client.EventServiceClient;
-import com.ticketing.booking.config.RabbitMQConfig;
-import com.ticketing.booking.dto.cache.BookingCacheDto;
-import com.ticketing.booking.dto.event.PaymentFailedEvent;
-import com.ticketing.booking.dto.event.PaymentSuccessEvent;
 import com.ticketing.booking.entity.Booking;
 import com.ticketing.booking.entity.BookingStatus;
-import com.ticketing.booking.messaging.publisher.BookingEventPublisher;
-import com.ticketing.booking.service.BookingCacheService;
+import com.ticketing.booking.messaging.payload.CancellationApprovedEvent;
+import com.ticketing.booking.messaging.payload.CancellationRejectedEvent;
 import com.ticketing.booking.service.BookingPersistenceService;
+import com.ticketing.booking.messaging.publisher.BookingEventPublisher;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.support.AmqpHeaders;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.util.Optional;
+import static com.ticketing.booking.config.RabbitMQConfig.*;
 
 /**
- * Listens for inbound RabbitMQ payment events published by Payment Service
- * and drives the booking to its final state (CONFIRMED or FAILED).
+ * Listens for admin decisions on cancellation requests.
  *
- * <p><strong>Fast path (Redis hit):</strong> when the booking snapshot is still in Redis
- * (written during {@code initiateBooking}), the handler skips the {@code findById} DB read,
- * issues a targeted UPDATE, and builds the notification event from the cached data.
- * The cache entry is evicted after processing.</p>
+ * <p>Two listeners: approval and rejection. Both include idempotency
+ * guards — if the booking is no longer in CANCELLATION_REQUESTED state
+ * (e.g. duplicate event delivery), the event is silently ignored.</p>
  *
- * <p><strong>Slow path (Redis miss):</strong> falls back to {@code findById} — covers
- * duplicate deliveries (cache already evicted) and any Redis outage scenario.</p>
- *
- * <p>All methods use <strong>manual acknowledgement</strong> — the message is acked
- * only after business logic completes, and nacked to DLQ on hard failure.</p>
+ * <p>On approval: seats restored first, then refund. This order is
+ * intentional — lost seats cannot be recovered, money can be manually
+ * refunded. See architecture decision doc for full reasoning.</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -42,100 +32,137 @@ import java.util.Optional;
 public class BookingEventListener {
 
     private final BookingPersistenceService bookingPersistenceService;
-    private final BookingEventPublisher bookingEventPublisher;
-    private final BookingCacheService bookingCacheService;
     private final EventServiceClient eventServiceClient;
+    private final BookingEventPublisher bookingEventPublisher;
 
-    @RabbitListener(queues = RabbitMQConfig.PAYMENT_SUCCESS_QUEUE)
-    public void handlePaymentSuccess(
-            PaymentSuccessEvent event,
-            Channel channel,
-            @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
+    // =============================================================================
+    //                       CANCELLATION APPROVED
+    // =============================================================================
 
-        log.info("Received payment.success: bookingId={} intentId={}",
-                event.bookingId(), event.stripePaymentIntentId());
+    @RabbitListener(queues = CANCELLATION_APPROVED_QUEUE)
+    public void onCancellationApproved(CancellationApprovedEvent event) {
+        log.info("Cancellation approved received: bookingId={}", event.bookingId());
+        Booking booking = bookingPersistenceService.findById(event.bookingId());
 
+        if (isIdempotencyCheckFailed(booking)) return;
+
+        if (!attemptSeatRestoration(booking, event.seatsToCancel())) {
+            return; // Seat restoration failed, flow halts here.
+        }
+
+        // Step 2 — Stripe refund
+        // TODO: stripe.refunds.create({ payment_intent: stripePaymentIntentId, amount: refundAmount })
+        //   On failure:
+        //     booking → CANCELLATION_FAILED
+        //     publish cancellationFailed: "Refund failed, seats already restored — manual refund needed"
+        //     return
+        //   NOTE: seats already restored at this point — admin must manually process refund
+        //   On success (or NO_REFUND — skip Stripe call entirely): continue to Step 3
+
+        finalizeApprovedCancellation(booking, event);
+        dispatchCancellationApprovedNotification(booking, event);
+
+        log.info("Cancellation approved and processed: bookingId={} refundType={} newStatus={}",
+                booking.getId(), event.refundType(), booking.getBookingStatus());
+    }
+
+    // =============================================================================
+    //                       CANCELLATION APPROVED END
+    // =============================================================================
+
+
+    // =============================================================================
+    //                       CANCELLATION REJECTED
+    // =============================================================================
+
+    @RabbitListener(queues = CANCELLATION_REJECTED_QUEUE)
+    public void onCancellationRejected(CancellationRejectedEvent event) {
+        log.info("Cancellation rejected received: bookingId={}", event.bookingId());
+        Booking booking = bookingPersistenceService.findById(event.bookingId());
+
+        if (isIdempotencyCheckFailed(booking)) return;
+
+        revertBookingToConfirmed(booking);
+        dispatchCancellationRejectedNotification(booking, event);
+
+        log.info("Cancellation rejected, booking reverted to CONFIRMED: bookingId={}", booking.getId());
+    }
+
+    // =============================================================================
+    //                       CANCELLATION REJECTED END
+    // =============================================================================
+
+
+    // -----------------------------------------------------------------------------
+    //                         PRIVATE HELPER METHODS
+    // -----------------------------------------------------------------------------
+
+    /**
+     * Idempotency guard — ignore duplicate or out-of-order events.
+     * Returns true if the event should be ignored.
+     */
+    private boolean isIdempotencyCheckFailed(Booking booking) {
+        if (booking.getBookingStatus() != BookingStatus.CANCELLATION_REQUESTED) {
+            log.warn("Ignoring event — unexpected status: bookingId={} status={}",
+                    booking.getId(), booking.getBookingStatus());
+            return true;
+        }
+        return false;
+    }
+
+    private boolean attemptSeatRestoration(Booking booking, int seatsToCancel) {
+        // Step 1 — Restore seats first (always before refund)
+        // If this fails → CANCELLATION_FAILED + alert admin → DO NOT attempt refund
         try {
-            Optional<BookingCacheDto> cached = bookingCacheService.get(event.bookingId());
+            eventServiceClient.restoreSeats(booking.getEventId(), seatsToCancel);
+            log.info("Seats restored on cancellation approval: bookingId={}", booking.getId());
+            return true;
+        } catch (FeignException e) {
+            log.error("CRITICAL: Seat restoration failed on cancellation approval: bookingId={}: {}",
+                    booking.getId(), e.getMessage());
 
-            if (cached.isPresent()) {
-                // Fast path — Redis hit: targeted UPDATE, no SELECT
-                bookingPersistenceService.confirmBookingById(event.bookingId());
-                bookingEventPublisher.publishBookingConfirmed(cached.get());
-                bookingCacheService.evict(event.bookingId());
-                log.info("Booking confirmed (fast path): bookingId={}", event.bookingId());
-            } else {
-                // Slow path — cache miss: load from DB (covers duplicate deliveries)
-                Booking booking = bookingPersistenceService.findById(event.bookingId());
-                if (booking.getBookingStatus() != BookingStatus.PENDING) {
-                    log.warn("Duplicate payment.success ignored: bookingId={} currentStatus={}",
-                            booking.getId(), booking.getBookingStatus());
-                    channel.basicAck(deliveryTag, false);
-                    return;
-                }
-                bookingPersistenceService.confirmBooking(booking);
-                bookingEventPublisher.publishBookingConfirmed(booking);
-                log.info("Booking confirmed (slow path): bookingId={}", event.bookingId());
-            }
-
-            channel.basicAck(deliveryTag, false);
-
-        } catch (Exception e) {
-            log.error("Unexpected error processing payment.success for bookingId={}: {}",
-                    event.bookingId(), e.getMessage(), e);
-            channel.basicNack(deliveryTag, false, false);
+            booking.setBookingStatus(BookingStatus.CANCELLATION_FAILED);
+            bookingPersistenceService.save(booking);
+            bookingEventPublisher.publishCancellationFailed(booking.getId(),
+                    "Seat restoration failed — manual intervention needed");
+            return false;
         }
     }
 
-    @RabbitListener(queues = RabbitMQConfig.PAYMENT_FAILED_QUEUE)
-    public void handlePaymentFailed(
-            PaymentFailedEvent event,
-            Channel channel,
-            @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
-
-        log.info("Received payment.failed: bookingId={}", event.bookingId());
-
-        try {
-            Optional<BookingCacheDto> cached = bookingCacheService.get(event.bookingId());
-
-            if (cached.isPresent()) {
-                // Fast path — Redis hit: release seats, targeted UPDATE, no SELECT
-                releaseSeatsSafely(cached.get().eventId(), cached.get().seatsBooked(), event.bookingId());
-                bookingPersistenceService.failBookingById(event.bookingId(), event.reason());
-                bookingEventPublisher.publishBookingFailed(cached.get(), event.reason());
-                bookingCacheService.evict(event.bookingId());
-                log.info("Booking failed (fast path): bookingId={} reason={}", event.bookingId(), event.reason());
-            } else {
-                // Slow path — cache miss: load from DB
-                Booking booking = bookingPersistenceService.findById(event.bookingId());
-                if (booking.getBookingStatus() != BookingStatus.PENDING) {
-                    log.warn("Duplicate payment.failed ignored: bookingId={} currentStatus={}",
-                            booking.getId(), booking.getBookingStatus());
-                    channel.basicAck(deliveryTag, false);
-                    return;
-                }
-                releaseSeatsSafely(booking.getEventId(), booking.getSeatsBooked(), event.bookingId());
-                bookingPersistenceService.failBooking(booking, event.reason());
-                bookingEventPublisher.publishBookingFailed(booking);
-                log.info("Booking failed (slow path): bookingId={} reason={}", event.bookingId(), event.reason());
-            }
-
-            channel.basicAck(deliveryTag, false);
-
-        } catch (Exception e) {
-            log.error("Unexpected error processing payment.failed for bookingId={}: {}",
-                    event.bookingId(), e.getMessage(), e);
-            channel.basicNack(deliveryTag, false, false);
-        }
+    private void finalizeApprovedCancellation(Booking booking, CancellationApprovedEvent event) {
+        // Step 3 — Update seat count and status
+        int updatedSeatCount = booking.getActiveSeatCount() - event.seatsToCancel();
+        booking.setActiveSeatCount(updatedSeatCount);
+        booking.setBookingStatus(updatedSeatCount == 0
+                ? BookingStatus.CANCELLED
+                : BookingStatus.CONFIRMED);
+        bookingPersistenceService.save(booking);
     }
 
-    private void releaseSeatsSafely(Long eventId, int seats, Long bookingId) {
-        try {
-            eventServiceClient.releaseSeats(eventId, seats);
-            log.info("Seats released: bookingId={} eventId={} seats={}", bookingId, eventId, seats);
-        } catch (Exception e) {
-            log.error("CRITICAL: Failed to release seats — bookingId={} eventId={} seats={} — manual intervention required: {}",
-                    bookingId, eventId, seats, e.getMessage());
-        }
+    private void dispatchCancellationApprovedNotification(Booking booking, CancellationApprovedEvent event) {
+        // Step 4 — Notify user
+        bookingEventPublisher.publishBookingCancelled(new BookingCancelledEvent(
+                booking.getId(),
+                booking.getUserId(),
+                booking.getRecipientEmail(),
+                event.refundType(),
+                event.refundAmount(),
+                event.refundReason()
+        ));
+    }
+
+    private void revertBookingToConfirmed(Booking booking) {
+        // Revert to CONFIRMED — seats were never touched during admin review
+        booking.setBookingStatus(BookingStatus.CONFIRMED);
+        bookingPersistenceService.save(booking);
+    }
+
+    private void dispatchCancellationRejectedNotification(Booking booking, CancellationRejectedEvent event) {
+        bookingEventPublisher.publishCancellationRejected(new CancellationRejectedNotificationEvent(
+                booking.getId(),
+                booking.getUserId(),
+                booking.getRecipientEmail(),
+                event.rejectionReason()
+        ));
     }
 }
